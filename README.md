@@ -1,0 +1,115 @@
+# copilot-lens
+
+GitHub Copilot token & premium usage analyzer for VSCode and IntelliJ IDEA.
+
+RTK-style CLI: **read IDE logs, count tokens locally, show what you're spending your premium requests on.** No cloud calls, no AI service — pure local log parsing with BPE token counting.
+
+## Why
+
+- **No cloud AI dependency** — only reads IDE's own verbose logs
+- **BPE token counting** via jtokkit (OpenAI tiktoken Java port)
+- **No install of external tools** — JDK 17+ is enough
+- **Works in PowerShell and Git Bash**
+- **One-shot, watch, history, JSON export** modes
+
+## Quick Start
+
+```bash
+# Build (downloads jtokkit jar, compiles)
+./build.sh
+
+# Initialize config (writes ./config.properties for IDE log paths)
+./copilot-lens.sh init        # Git Bash
+.\copilot-lens.ps1 init        # PowerShell
+
+# Add wrapper to PATH (optional)
+./install.sh
+
+# Run (auto-detects which IDE was used most recently)
+copilot-lens
+# or
+.\copilot-lens.ps1
+```
+
+See [INSTALL.md](docs/INSTALL.md) for full setup, [USAGE.md](docs/USAGE.md) for command reference, [FEATURES.md](docs/FEATURES.md) for feature deep-dives.
+
+## Commands
+
+| Command | What |
+|---------|------|
+| `copilot-lens` | Single-shot report (console only) |
+| `copilot-lens gain --history` | Daily usage trend |
+| `copilot-lens discover` | Optimization findings |
+| `copilot-lens watch` | Live monitoring |
+| `copilot-lens export json` | JSON export to file |
+| `copilot-lens report` | HTML report to file |
+| `copilot-lens init` | Write default config (idempotent) |
+
+## IDE Auto-Detection
+
+By default, copilot-lens finds whichever IDE log was modified most recently. No `--ide` flag needed. Force one with `--ide=vscode` or `--ide=idea`.
+
+## Configuration
+
+Project-level config at `./config.properties` (created by `init`). Override IDE log paths without env vars:
+
+```properties
+log.vscode=${APPDATA}/Code/logs/**/output_logging*.log
+log.idea=${LOCALAPPDATA}/JetBrains/**/log/idea.log
+cache.enabled=true
+state.enabled=true
+```
+
+## Project Layout
+
+```
+copilot-lens/
+├── README.md
+├── build.sh                 Build script (downloads jtokkit jar)
+├── install.sh               Copies wrapper to ~/.local/bin
+├── copilot-lens.sh          Bash wrapper (script source)
+├── copilot-lens.ps1         PowerShell wrapper (5.1 compatible)
+├── config.properties        Project-level IDE log path config
+├── src/io/copilotlens/
+│   ├── Main.java            CLI entry + routing
+│   ├── Args.java            Argument parsing
+│   ├── config/
+│   │   └── CopilotLensConfig.java   Reads project + user config
+│   ├── detector/
+│   │   └── IdeDetector.java Glob-based IDE log discovery
+│   ├── parser/
+│   │   ├── CopilotRequest.java     Domain model
+│   │   ├── LogParser.java          Interface
+│   │   ├── VsCodeParser.java       JSON log format
+│   │   └── IntelliJParser.java     Plain-text log format
+│   ├── analyzer/
+│   │   ├── TokenCounter.java       BPE token counting (jtokkit)
+│   │   ├── StatsAggregator.java    Summary statistics
+│   │   ├── Discoverer.java         Optimization findings
+│   │   └── IncrementalState.java   File offset cache
+│   ├── reporter/
+│   │   ├── CliReporter.java        Terminal output (ANSI)
+│   │   ├── HtmlReporter.java       HTML report
+│   │   └── JsonReporter.java       JSON export
+│   └── watch/
+│       └── LogWatcher.java         Live monitoring
+├── docs/
+│   ├── INSTALL.md
+│   ├── USAGE.md
+│   └── FEATURES.md
+├── lib/                     Downloaded jars (created by build.sh)
+└── out/                     Compiled classes (created by build.sh)
+```
+
+## Requirements
+
+- **JDK 17+** (JDK 21 recommended)
+- Git Bash on Windows (or any POSIX shell)
+- PowerShell 5.1+ for the `.ps1` wrapper
+- ~5 MB disk (jar + compiled classes)
+
+No Maven/Gradle/Node/external tools.
+
+## License
+
+MIT.
