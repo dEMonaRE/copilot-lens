@@ -6,6 +6,9 @@ import io.copilotlens.analyzer.IncrementalState;
 import io.copilotlens.analyzer.StatsAggregator;
 import io.copilotlens.analyzer.StatsAggregator.Report;
 import io.copilotlens.analyzer.TokenCounter;
+import io.copilotlens.analyzer.TrendAggregator;
+import io.copilotlens.analyzer.TrendAggregator.Period;
+import io.copilotlens.analyzer.TrendAggregator.TrendPoint;
 import io.copilotlens.config.CopilotLensConfig;
 import io.copilotlens.detector.IdeDetector;
 import io.copilotlens.parser.CopilotRequest;
@@ -15,6 +18,8 @@ import io.copilotlens.parser.VsCodeParser;
 import io.copilotlens.reporter.CliReporter;
 import io.copilotlens.reporter.HtmlReporter;
 import io.copilotlens.reporter.JsonReporter;
+import io.copilotlens.snapshot.Snapshot;
+import io.copilotlens.snapshot.SnapshotStore;
 import io.copilotlens.watch.LogWatcher;
 
 import java.nio.file.Files;
@@ -22,7 +27,9 @@ import java.nio.file.attribute.BasicFileAttributes;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -36,10 +43,16 @@ import java.util.Optional;
  *   copilot-lens watch            Live terminal dashboard
  *   copilot-lens export json      JSON export
  *   copilot-lens report           HTML-only report
+ *   copilot-lens snapshot         Persist today's totals
+ *   copilot-lens trend            ASCII trend from snapshots
+ *   copilot-lens init             Write default project config
+ *   copilot-lens install          Copy wrapper to ~/.local/bin
  *
  * Options:
  *   --ide=vscode|idea|auto   IDE selection (default: auto)
  *   --log=<path>             Manual log file
+ *   --period=daily|weekly|monthly   Trend grouping (default: daily)
+ *   --days=N                 How many recent buckets to show (default: 30)
  *   --no-ansi                Disable color
  *   --help                   Help
  */
@@ -60,6 +73,9 @@ public class Main {
                 case DISCOVER -> runDiscover(params);
                 case EXPORT -> runExport(params);
                 case INIT -> runInit(params);
+                case SNAPSHOT -> runSnapshot(params);
+                case TREND -> runTrend(params);
+                case INSTALL -> runInstall(params);
             }
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
@@ -159,20 +175,105 @@ public class Main {
     }
 
     static void runInit(Args params) throws Exception {
-        Path configFile = CopilotLensConfig.getHomeDir().resolve("config.properties");
+        // Project-level config (cwd) takes priority; init creates it there.
+        // User-level config (~/.copilot-lens/config.properties) is only used as
+        // a fallback when no project config exists, and is not touched by init.
+        Path configFile = Paths.get("config.properties");
 
         // Idempotent: skip if already exists to avoid triggering Windows file
         // association prompts when the .properties file gets recreated.
         if (Files.exists(configFile)) {
-            System.out.println("Config already exists: " + configFile);
+            System.out.println("Config already exists: " + configFile.toAbsolutePath());
             System.out.println("Edit it manually to change IDE log paths or tool settings.");
             System.out.println("Delete it first if you want to regenerate with new defaults.");
             return;
         }
 
         CopilotLensConfig.writeDefault();
-        System.out.println("Default config written: " + configFile);
+        System.out.println("Project config written: " + configFile.toAbsolutePath());
         System.out.println("Edit to override IDE log paths and tool settings.");
+    }
+
+    /**
+     * Install the wrapper into ~/.local/bin so `copilot-lens` is runnable
+     * from anywhere on PATH. Equivalent to the old install.sh but goes
+     * through the standard wrapper so output stays in the current terminal.
+     */
+    static void runInstall(Args params) throws Exception {
+        // Find wrapper source: same directory the JVM was launched from.
+        Path projectRoot = locateProjectRoot();
+        Path wrapperSrc = projectRoot.resolve("copilot-lens.sh");
+        if (!Files.exists(wrapperSrc)) {
+            System.err.println("ERROR: wrapper not found: " + wrapperSrc);
+            System.err.println("Run from the copilot-lens project root.");
+            System.exit(1);
+        }
+
+        Path home = Paths.get(System.getProperty("user.home"));
+        Path installDir = home.resolve(".local").resolve("bin");
+        Files.createDirectories(installDir);
+        Path wrapperDst = installDir.resolve("copilot-lens");
+
+        // Replace existing file or symlink
+        try { Files.delete(wrapperDst); } catch (java.nio.file.NoSuchFileException ignored) {}
+
+        Files.copy(wrapperSrc, wrapperDst, java.nio.file.StandardCopyOption.COPY_ATTRIBUTES);
+        // Ensure executable bit (best-effort on Windows)
+        wrapperDst.toFile().setExecutable(true, false);
+
+        System.out.println("OK Installed: " + wrapperDst);
+        System.out.println("   (from " + wrapperSrc + ")");
+
+        // PATH check + .bashrc update
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv != null && pathEnv.contains(";" + installDir.toString())
+                            || (pathEnv != null && pathEnv.startsWith(installDir.toString()))) {
+            System.out.println("OK " + installDir + " is already in PATH");
+        } else {
+            Path bashrc = home.resolve(".bashrc");
+            if (Files.exists(bashrc)) {
+                String marker = "# copilot-lens PATH";
+                String existing = Files.readString(bashrc);
+                if (!existing.contains(marker)) {
+                    String append = System.lineSeparator()
+                                   + marker + System.lineSeparator()
+                                   + "export PATH=\"$HOME/.local/bin:$PATH\"" + System.lineSeparator();
+                    Files.writeString(bashrc, append,
+                            java.nio.file.StandardOpenOption.APPEND);
+                    System.out.println("OK PATH updated in " + bashrc);
+                    System.out.println("   Activate with: source " + bashrc);
+                } else {
+                    System.out.println("OK PATH entry already present in " + bashrc);
+                }
+            } else {
+                System.out.println("WARN No ~/.bashrc found. Add manually:");
+                System.out.println("   export PATH=\"$HOME/.local/bin:$PATH\"");
+            }
+        }
+
+        System.out.println();
+        System.out.println("Install complete. Test with:");
+        System.out.println("  copilot-lens --help");
+    }
+
+    /**
+     * Locate the project root by searching upward from cwd for
+     * {@code lib/jtokkit-*.jar} (the same convention the bash wrapper uses).
+     */
+    static Path locateProjectRoot() {
+        Path dir = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        for (int i = 0; i < 8 && dir != null; i++) {
+            Path lib = dir.resolve("lib");
+            if (Files.isDirectory(lib)) {
+                try (var s = Files.list(lib)) {
+                    if (s.anyMatch(p -> p.getFileName().toString().startsWith("jtokkit-"))) {
+                        return dir;
+                    }
+                } catch (Exception ignored) {}
+            }
+            dir = dir.getParent();
+        }
+        return Paths.get(System.getProperty("user.dir")).toAbsolutePath();
     }
 
     static void runDiscover(Args params) throws Exception {
@@ -192,9 +293,9 @@ public class Main {
         }
         for (int i = 0; i < findings.size(); i++) {
             Finding f = findings.get(i);
-            System.out.printf("%n[%d] %s%n", i + 1, f.title());
-            System.out.printf("    %s%n", f.detail());
-            System.out.printf("    Severity: %.1f%n", f.severity());
+            System.out.printf(Locale.ROOT, "%n[%d] %s%n", i + 1, f.title());
+            System.out.printf(Locale.ROOT, "    %s%n", f.detail());
+            System.out.printf(Locale.ROOT, "    Severity: %.1f%n", f.severity());
         }
         System.out.println();
         System.out.println("=".repeat(64));
@@ -219,6 +320,57 @@ public class Main {
         Path output = Paths.get("copilot-lens-export.json");
         new JsonReporter().write(requests, output);
         System.out.println("Export written: " + output.toAbsolutePath());
+    }
+
+    /**
+     * Persist a Snapshot for today derived from the cache.
+     * The Report aggregates ALL cached requests; we filter by date so each
+     * daily snapshot is self-contained and additive across runs.
+     */
+    static void runSnapshot(Args params) throws Exception {
+        IncrementalState state = new IncrementalState();
+        // Force a cache-only read; we only need what was already parsed.
+        Path log = params.logFile != null ? params.logFile : resolveLog(params);
+        LogParser parser = createParser(log, params);
+
+        List<CopilotRequest> cached = state.getAllCached();
+        if (cached.isEmpty()) {
+            // No cache: parse once so we have something to snapshot.
+            cached = parser.parse(log);
+            state.addRequests(cached);
+            long size = Files.size(log);
+            String normalized = log.toString().replace('\\', '/');
+            BasicFileAttributes attrs = Files.readAttributes(log, BasicFileAttributes.class);
+            state.recordParsed(normalized, size,
+                    attrs.lastModifiedTime().toMillis(), cached.size());
+        }
+
+        LocalDate today = LocalDate.now();
+        Snapshot s = Snapshot.forDate(today, cached);
+
+        SnapshotStore store = new SnapshotStore();
+        store.save(s);
+
+        CliReporter cli = new CliReporter(!params.noAnsi);
+        cli.printSnapshotConfirmation(s, store.dir());
+    }
+
+    static void runTrend(Args params) throws Exception {
+        SnapshotStore store = new SnapshotStore();
+        List<Snapshot> all = store.loadAll();
+        if (all.isEmpty()) {
+            System.out.println("No snapshots yet.");
+            System.out.println("Run `copilot-lens snapshot` to record today's totals.");
+            return;
+        }
+
+        Period period = TrendAggregator.parse(params.period);
+        TrendAggregator agg = new TrendAggregator();
+        List<TrendPoint> points = agg.aggregate(all, period);
+        points = agg.limit(points, Math.max(1, params.days));
+
+        CliReporter cli = new CliReporter(!params.noAnsi);
+        cli.printTrend(points, period, all.size());
     }
 
     static Path resolveLog(Args params) {
@@ -267,10 +419,16 @@ public class Main {
               watch            Live monitoring (RTK 'watch' style)
               export json      JSON export
               report           Generate HTML report only
+              snapshot         Persist today's totals to ~/.copilot-lens/snapshots/
+              trend            ASCII trend chart from stored snapshots
+              init             Write default ./config.properties (idempotent)
+              install          Copy wrapper to ~/.local/bin and update PATH
 
             Options:
               --ide=vscode|idea|auto   IDE selection (default: auto)
               --log=<path>             Manual log file
+              --period=daily|weekly|monthly   Trend grouping (default: daily)
+              --days=N                 How many recent buckets to show (default: 30)
               --no-ansi                Disable colored terminal output
               --help, -h               Show this help
 
@@ -279,7 +437,11 @@ public class Main {
               copilot-lens watch --ide=idea
               copilot-lens discover
               copilot-lens gain --history
+              copilot-lens snapshot
+              copilot-lens trend --period=weekly --days=12
+              copilot-lens trend --period=monthly
               copilot-lens export json
+              copilot-lens install
               copilot-lens --log=/path/to/custom.log
 
             Enable log generation:

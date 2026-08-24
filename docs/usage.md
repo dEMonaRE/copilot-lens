@@ -56,6 +56,41 @@ Finds optimization opportunities:
 - Low signal/noise requests (big prompt, small response)
 - Your peak usage hours
 
+### `copilot-lens snapshot`
+
+Persists today's totals to `~/.copilot-lens/snapshots/YYYY-MM-DD.json`. Run this once a day (or after a coding session) to build a historical baseline.
+
+```
+$ copilot-lens snapshot
++================================================================+
+|   GitHub Copilot Lens                                          |
+|   Token & Premium Usage Analyzer                               |
++================================================================+
+
+Snapshot saved
+----------------------------------------------------------------
+  Date              2026-08-24
+  IDE               vscode
+  Requests          47
+  Input tokens      18,432
+  Output tokens     6,891
+  Total tokens      25,323
+
+  File: C:\Users\you\.copilot-lens\snapshots\2026-08-24.json
+```
+
+### `copilot-lens trend`
+
+Reads stored snapshots and renders an ASCII bar chart. Default is daily for the last 30 buckets.
+
+```
+$ copilot-lens trend --period=weekly --days=12
+```
+
+Options:
+- `--period=daily|weekly|monthly` — bucket size (default: daily)
+- `--days=N` — how many recent buckets to show (default: 30)
+
 ### `copilot-lens watch`
 
 Live monitoring. Polls log file every 500 ms. Refreshes dashboard as new requests come in. `Ctrl+C` to exit.
@@ -76,7 +111,13 @@ Writes HTML report to `copilot-lens-report.html`. Open in any browser. Dark mode
 
 ### `copilot-lens init`
 
-Writes default `config.properties` in the project root. Idempotent — does nothing if file exists.
+Writes default `./config.properties` in the current directory. Idempotent — does nothing if file exists. Use this to bootstrap a project for the first time; commit the resulting file so teammates inherit it.
+
+### `copilot-lens install`
+
+Copies the wrapper to `~/.local/bin/copilot-lens` so `copilot-lens` is runnable from anywhere. Adds the directory to PATH in `~/.bashrc` if missing. Idempotent.
+
+Equivalent to the old `./install.sh`, but goes through the standard wrapper so output stays in the current terminal.
 
 ## Options
 
@@ -84,6 +125,8 @@ Writes default `config.properties` in the project root. Idempotent — does noth
 |------|---------|-------------|
 | `--ide=vscode\|idea\|auto` | `auto` | Which IDE log to use (auto = most recent) |
 | `--log=<path>` | (auto) | Manual log file path |
+| `--period=daily\|weekly\|monthly` | `daily` | Trend grouping (used by `trend`) |
+| `--days=N` | `30` | How many recent buckets to show (used by `trend`) |
 | `--no-ansi` | off | Disable colored output |
 | `--help`, `-h` | off | Show help |
 
@@ -121,27 +164,11 @@ Disable with `cache.enabled=false` in `config.properties`.
 
 ## Enabling Verbose Logs
 
-### VSCode
+Copilot's verbose log is **OFF by default** in both IDEs. Without enabling it, copilot-lens will print `Log file not found` even though the IDE is running — the log files simply do not exist yet.
 
-1. `F1` → "Developer: Set Log Level"
-2. Type: `GitHub Copilot Chat`
-3. Set level: `Trace`
-4. Reproduce the action you want to analyze
-5. Run `copilot-lens`
+Full step-by-step instructions for both IDEs (including verification commands and how to disable again):
 
-Log location: `%APPDATA%\Code\logs\<date>\exthost\output_logging_*.log`
-
-### IntelliJ IDEA
-
-1. `Help` → `Diagnostic Tools` → `Debug Log Settings`
-2. Click the icon to add a new entry
-3. Type: `#com.github.copilot:trace`
-4. Save
-5. Restart IDE if needed
-6. Reproduce the action
-7. Run `copilot-lens`
-
-Log location: `%LOCALAPPDATA%\JetBrains\IntelliJIdea<version>\log\idea.log`
+→ See [INSTALL.md → "Enable Verbose Log"](INSTALL.md#enable-verbose-log-required-for-copilot-lens-to-find-anything)
 
 ## Output Interpretation
 
@@ -174,10 +201,21 @@ Severity-ranked list of optimization opportunities. Highest-severity first.
 
 ## Common Workflows
 
+### Daily Tracking
+
+```bash
+# End of each coding session
+copilot-lens snapshot
+
+# Spot-check the trend
+copilot-lens trend --period=daily --days=14
+```
+
 ### Weekly Review
 
 ```bash
 copilot-lens gain --history
+copilot-lens trend --period=weekly --days=8
 ```
 
 ### Audit Before Refactor

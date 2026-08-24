@@ -31,7 +31,12 @@ public class CopilotLensConfig {
 
     private CopilotLensConfig() {
         // Hard-coded baseline defaults
-        props.setProperty("log.vscode", "${APPDATA}/Code/logs/**/output_logging*.log");
+        // VSCode: search both the old "output_logging" convention (used when
+        // verbose log is enabled via F1 -> Set Log Level) AND the new
+        // per-extension log path produced by GitHub Copilot Chat.
+        props.setProperty("log.vscode",
+                "${APPDATA}/Code/logs/**/output_logging*.log,"
+              + "${APPDATA}/Code/logs/**/GitHub.copilot-chat/GitHub Copilot Chat.log");
         props.setProperty("log.idea", "${LOCALAPPDATA}/JetBrains/**/log/idea.log");
         props.setProperty("state.dir", DEFAULT_HOME.toString());
         props.setProperty("state.enabled", "true");
@@ -128,22 +133,38 @@ public class CopilotLensConfig {
         return out.toString();
     }
 
-    /** Write default user config (used by `copilot-lens init`). */
+    /** Write default project-level config (used by `copilot-lens init`). */
     public static void writeDefault() throws IOException {
-        if (!Files.exists(DEFAULT_HOME)) Files.createDirectories(DEFAULT_HOME);
         String content = """
-            # copilot-lens user-level configuration
-            # For project-level overrides, edit ./config.properties in your project root.
+            # copilot-lens configuration (project-level)
+            #
+            # This file lives inside the project so each project can pin its own IDE log paths.
+            # Values here override the user-level fallback at ~/.copilot-lens/config.properties.
+            #
+            # After editing, just re-run `copilot-lens` -- no restart needed.
 
-            # Default IDE log globs (override per-project via ./config.properties)
+            # --- IDE-specific Copilot log paths ---
+            # Glob patterns, ** = recursive directory walk.
+            # Variables like ${APPDATA}, ${LOCALAPPDATA}, ${HOME} are expanded at runtime
+            # (do NOT set them yourself -- read them from your shell if you need the value).
+
+            # VSCode Copilot log (Windows default)
             log.vscode=${APPDATA}/Code/logs/**/output_logging*.log
+
+            # IntelliJ IDEA Copilot log (Windows default)
             log.idea=${LOCALAPPDATA}/JetBrains/**/log/idea.log
 
-            # State & cache
+            # --- Tool behavior ---
+
+            # Where to keep incremental scan state + parsed request cache
             state.dir=${HOME}/.copilot-lens
+
+            # Track per-file byte offset (delta scans on subsequent runs)
             state.enabled=true
+
+            # Cache parsed requests across runs (avoids full re-parse)
             cache.enabled=true
             """;
-        Files.writeString(USER_CONFIG, content);
+        Files.writeString(Paths.get("config.properties"), content);
     }
 }

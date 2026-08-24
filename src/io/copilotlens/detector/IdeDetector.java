@@ -41,8 +41,27 @@ public class IdeDetector {
     /**
      * Glob pattern'i expand edip eşleşen en yeni dosyayı bulur.
      * ** ile iç içe klasörler desteklenir.
+     * Virgülle ayrılmış birden fazla glob kabul edilir; en yeni maç döner.
      */
     private Optional<Path> findLatestMatching(String pattern) {
+        if (pattern == null || pattern.isEmpty()) return Optional.empty();
+
+        // Allow comma-separated list of globs (e.g. old + new VSCode log paths)
+        Path[] best = { null };
+        long[] bestMtime = { -1 };
+        for (String p : pattern.split(",")) {
+            findLatestMatchingSingle(p.trim()).ifPresent(candidate -> {
+                long mtime = candidate.toFile().lastModified();
+                if (mtime > bestMtime[0]) {
+                    bestMtime[0] = mtime;
+                    best[0] = candidate;
+                }
+            });
+        }
+        return Optional.ofNullable(best[0]);
+    }
+
+    private Optional<Path> findLatestMatchingSingle(String pattern) {
         if (pattern == null || pattern.isEmpty()) return Optional.empty();
 
         // Pattern'i base path + filename glob olarak ayır

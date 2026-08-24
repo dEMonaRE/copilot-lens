@@ -24,15 +24,22 @@ public class StatsAggregator {
             int maxInputTokens,
             int maxOutputTokens,
             List<CopilotRequest> largestRequests,
+            List<CopilotRequest> allRequests,
             Map<String, Integer> hourlyDistribution,
             Map<LocalDate, Integer> dailyDistribution,
             long firstTimestampMs,
-            long lastTimestampMs
+            long lastTimestampMs,
+            // Yeni mimaride token yok, aktivite proxy metrikleri:
+            Map<String, Integer> modelDistribution,
+            Map<String, Integer> providerDistribution,
+            double avgLatencyMs,
+            int latencySampleCount
     ) {}
 
     public Report aggregate(List<CopilotRequest> requests) {
         if (requests.isEmpty()) {
-            return new Report(0, 0, 0, 0, 0, 0, 0, List.of(),
+            return new Report(0, 0, 0, 0, 0, 0, 0, List.of(), List.of(),
+                    Map.of(), Map.of(), 0, 0,
                     Map.of(), Map.of(), 0, 0);
         }
 
@@ -62,11 +69,31 @@ public class StatsAggregator {
         long lastMs = requests.get(requests.size() - 1).timestamp()
                 .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
 
+        // Aktivite proxy metrikleri (yeni mimari için)
+        Map<String, Integer> modelDist = new TreeMap<>();
+        Map<String, Integer> providerDist = new TreeMap<>();
+        long latencySum = 0;
+        int latencyCount = 0;
+        for (CopilotRequest r : requests) {
+            if (r.model() != null && !r.model().isEmpty()) {
+                modelDist.merge(r.model(), 1, Integer::sum);
+            }
+            if (r.provider() != null && !r.provider().isEmpty()) {
+                providerDist.merge(r.provider(), 1, Integer::sum);
+            }
+            if (r.latencyMs() != null) {
+                latencySum += r.latencyMs();
+                latencyCount++;
+            }
+        }
+        double avgLatency = latencyCount > 0 ? (double) latencySum / latencyCount : 0;
+
         return new Report(
                 count, totalIn, totalOut,
                 (double) totalIn / count,
                 (double) totalOut / count,
-                maxIn, maxOut, largest, hourly, daily,
-                firstMs, lastMs);
+                maxIn, maxOut, largest, requests, hourly, daily,
+                firstMs, lastMs,
+                modelDist, providerDist, avgLatency, latencyCount);
     }
 }
