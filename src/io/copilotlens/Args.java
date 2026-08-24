@@ -9,7 +9,7 @@ import java.nio.file.Paths;
  */
 public class Args {
 
-    public enum Command { LOG, WATCH, GAIN, DISCOVER, EXPORT, REPORT, INIT }
+    public enum Command { LOG, WATCH, GAIN, DISCOVER, EXPORT, REPORT, INIT, SNAPSHOT, TREND, INSTALL }
     public enum Ide { IDE_AUTO, IDE_VSCODE, IDE_INTELLIJ }
 
     public Command command = Command.LOG;
@@ -19,6 +19,8 @@ public class Args {
     public boolean help = false;
     public boolean history = false;
     public String format;
+    public String period = "daily";
+    public int days = 30;
 
     public static Args parse(String[] argv) {
         Args a = new Args();
@@ -30,6 +32,9 @@ public class Args {
                 case "gain" -> a.command = Command.GAIN;
                 case "discover" -> a.command = Command.DISCOVER;
                 case "init" -> a.command = Command.INIT;
+                case "install" -> a.command = Command.INSTALL;
+                case "snapshot" -> a.command = Command.SNAPSHOT;
+                case "trend" -> a.command = Command.TREND;
                 case "export" -> {
                     a.command = Command.EXPORT;
                     if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
@@ -50,6 +55,14 @@ public class Args {
                         };
                     } else if (arg.startsWith("--log=")) {
                         a.logFile = Paths.get(arg.substring(6));
+                    } else if (arg.startsWith("--period=")) {
+                        a.period = arg.substring(9).toLowerCase();
+                    } else if (arg.startsWith("--days=")) {
+                        try {
+                            a.days = Integer.parseInt(arg.substring(7));
+                        } catch (NumberFormatException ignored) {
+                            a.days = 30;
+                        }
                     }
                 }
             }

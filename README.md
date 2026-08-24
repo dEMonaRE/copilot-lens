@@ -23,7 +23,8 @@ RTK-style CLI: **read IDE logs, count tokens locally, show what you're spending 
 .\copilot-lens.ps1 init        # PowerShell
 
 # Add wrapper to PATH (optional)
-./install.sh
+./copilot-lens.sh install
+.\copilot-lens.ps1 install
 
 # Run (auto-detects which IDE was used most recently)
 copilot-lens
@@ -41,9 +42,12 @@ See [INSTALL.md](docs/INSTALL.md) for full setup, [USAGE.md](docs/USAGE.md) for 
 | `copilot-lens gain --history` | Daily usage trend |
 | `copilot-lens discover` | Optimization findings |
 | `copilot-lens watch` | Live monitoring |
+| `copilot-lens snapshot` | Persist today's totals to `~/.copilot-lens/snapshots/` |
+| `copilot-lens trend` | ASCII trend chart from stored snapshots |
 | `copilot-lens export json` | JSON export to file |
-| `copilot-lens report` | HTML report to file |
-| `copilot-lens init` | Write default config (idempotent) |
+| `copilot-lens report` | HTML report to file (includes trend section if snapshots exist) |
+| `copilot-lens init` | Write `./config.properties` in cwd (idempotent) |
+| `copilot-lens install` | Copy wrapper to `~/.local/bin` and update PATH |
 
 ## IDE Auto-Detection
 
@@ -51,7 +55,7 @@ By default, copilot-lens finds whichever IDE log was modified most recently. No 
 
 ## Configuration
 
-Project-level config at `./config.properties` (created by `init`). Override IDE log paths without env vars:
+Project-level config at `./config.properties` (created by `init` in the current directory). Override IDE log paths without env vars:
 
 ```properties
 log.vscode=${APPDATA}/Code/logs/**/output_logging*.log
@@ -60,13 +64,15 @@ cache.enabled=true
 state.enabled=true
 ```
 
+`init` only writes the project-level file. `~/.copilot-lens/config.properties` is a fallback consulted when no project config exists; it is never created or modified by `init`.
+
 ## Project Layout
 
 ```
 copilot-lens/
 ├── README.md
 ├── build.sh                 Build script (downloads jtokkit jar)
-├── install.sh               Copies wrapper to ~/.local/bin
+├── install.sh               Backward-compat thin wrapper around `install` subcommand
 ├── copilot-lens.sh          Bash wrapper (script source)
 ├── copilot-lens.ps1         PowerShell wrapper (5.1 compatible)
 ├── config.properties        Project-level IDE log path config

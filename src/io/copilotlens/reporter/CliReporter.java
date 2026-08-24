@@ -1,9 +1,14 @@
 package io.copilotlens.reporter;
 
 import io.copilotlens.analyzer.StatsAggregator.Report;
+import io.copilotlens.analyzer.TrendAggregator.Period;
+import io.copilotlens.analyzer.TrendAggregator.TrendPoint;
 import io.copilotlens.parser.CopilotRequest;
+import io.copilotlens.snapshot.Snapshot;
 
+import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,6 +44,10 @@ public class CliReporter {
         if (!report.dailyDistribution().isEmpty()) {
             printDailyHistory(report.dailyDistribution());
         }
+        printContextSnapshot(report);
+        printModelDistribution(report);
+        printProviderDistribution(report);
+        printLatencySummary(report);
         printTopRequests(report.largestRequests());
         printHourlyDistribution(report.hourlyDistribution());
         printFooter(report);
@@ -155,6 +164,105 @@ public class CliReporter {
         }
     }
 
+    private void printModelDistribution(Report r) {
+        if (r.modelDistribution().isEmpty()) return;
+        c(BOLD, "Model Distribution");
+        System.out.println();
+        c(GRAY, repeat('-', 64));
+        System.out.println();
+        int total = r.modelDistribution().values().stream().mapToInt(Integer::intValue).sum();
+        for (var e : r.modelDistribution().entrySet()) {
+            int pct = (int) (100.0 * e.getValue() / total);
+            int barWidth = (int) (40.0 * pct / 100);
+            System.out.printf(Locale.ROOT, "  %-30s  ", truncate(e.getKey(), 30));
+            color(GREEN, repeat('#', Math.max(0, barWidth)));
+            System.out.printf(Locale.ROOT, " %,4d (%d%%)%n", e.getValue(), pct);
+        }
+    }
+
+    private void printProviderDistribution(Report r) {
+        if (r.providerDistribution().isEmpty()) return;
+        c(BOLD, "Provider Distribution");
+        System.out.println();
+        c(GRAY, repeat('-', 64));
+        System.out.println();
+        int total = r.providerDistribution().values().stream().mapToInt(Integer::intValue).sum();
+        for (var e : r.providerDistribution().entrySet()) {
+            int pct = (int) (100.0 * e.getValue() / total);
+            int barWidth = (int) (40.0 * pct / 100);
+            System.out.printf(Locale.ROOT, "  %-30s  ", truncate(e.getKey(), 30));
+            color(GREEN, repeat('#', Math.max(0, barWidth)));
+            System.out.printf(Locale.ROOT, " %,4d (%d%%)%n", e.getValue(), pct);
+        }
+    }
+
+    private void printLatencySummary(Report r) {
+        if (r.latencySampleCount() == 0) return;
+        c(BOLD, "Latency");
+        System.out.println();
+        c(GRAY, repeat('-', 64));
+        System.out.println();
+        System.out.printf(Locale.ROOT, "  Avg latency      %,.0f ms  (over %,d samples)%n",
+                r.avgLatencyMs(), r.latencySampleCount());
+    }
+
+    /**
+     * IntelliJ session.usage_info eventlerinden context snapshot özeti.
+     * Endpoint = "backgroundAgent/sessionUpdate" olan isteklerden summary içindeki
+     * "ctx=X/Y conv=Z sys=W tools=V" parse edilir.
+     */
+    private void printContextSnapshot(Report r) {
+        java.util.regex.Pattern SUMMARY_CTX = java.util.regex.Pattern.compile(
+                "ctx=(\\d+)/(\\d+)\\s*\\+(\\d+)\\s*conv=(\\d+)\\s*sys=(\\d+)\\s*tools=(\\d+)");
+
+        List<CopilotRequest> events = new ArrayList<>();
+        for (CopilotRequest req : r.allRequests()) {
+            if ("backgroundAgent/sessionUpdate".equals(req.endpoint())
+                    && req.summary() != null && req.summary().contains("ctx=")) {
+                events.add(req);
+            }
+        }
+        if (events.isEmpty()) return;
+
+        c(BOLD, "Context Snapshots (IntelliJ session.usage_info)");
+        System.out.println();
+        c(GRAY, repeat('-', 64));
+        System.out.println();
+
+        int firstCtx = 0, firstLimit = 0, firstConv = 0, firstSys = 0, firstTools = 0;
+        int lastCtx = 0, lastLimit = 0, lastConv = 0;
+        int turnCount = 0;
+        int totalDelta = 0;
+
+        for (int i = 0; i < events.size(); i++) {
+            java.util.regex.Matcher m = SUMMARY_CTX.matcher(events.get(i).summary());
+            if (!m.find()) continue;
+            int ctx = Integer.parseInt(m.group(1));
+            int limit = Integer.parseInt(m.group(2));
+            int delta = Integer.parseInt(m.group(3));
+            int conv = Integer.parseInt(m.group(4));
+            int sys = Integer.parseInt(m.group(5));
+            int tools = Integer.parseInt(m.group(6));
+
+            if (i == 0) {
+                firstCtx = ctx; firstLimit = limit; firstConv = conv; firstSys = sys; firstTools = tools;
+            }
+            lastCtx = ctx; lastLimit = limit; lastConv = conv;
+            totalDelta += delta;
+            turnCount++;
+        }
+
+        System.out.printf(Locale.ROOT, "  Token limit        %,d%n", lastLimit);
+        System.out.printf(Locale.ROOT, "  Context now        %,d / %,d  (%.1f%%)%n",
+                lastCtx, lastLimit, 100.0 * lastCtx / lastLimit);
+        System.out.printf(Locale.ROOT, "  Conversation       %,d -> %,d  (+%,d tokens)%n",
+                firstConv, lastConv, lastConv - firstConv);
+        System.out.printf(Locale.ROOT, "  System overhead    %,d tokens (constant)%n", firstSys);
+        System.out.printf(Locale.ROOT, "  Tool definitions   %,d tokens (constant)%n", firstTools);
+        System.out.printf(Locale.ROOT, "  Turns              %d  (+%,d tokens total)%n",
+                turnCount, totalDelta);
+    }
+
     private void printHourlyDistribution(Map<String, Integer> hourly) {
         if (hourly.isEmpty()) return;
         c(BOLD, "Hourly Distribution");
@@ -197,6 +305,57 @@ public class CliReporter {
         c(GRAY, "  Live watch  : copilot-lens watch");
         System.out.println();
         c(GRAY, "  JSON export : copilot-lens export json");
+        System.out.println();
+    }
+
+    /** Render the ASCII trend chart for the given points. */
+    public void printTrend(List<TrendPoint> points, Period period, int totalSnapshots) {
+        printBanner();
+        String title = switch (period) {
+            case DAILY   -> "Daily Trend";
+            case WEEKLY  -> "Weekly Trend";
+            case MONTHLY -> "Monthly Trend";
+        };
+        c(BOLD, title + " (last " + points.size() + " of " + totalSnapshots + " snapshots)");
+        System.out.println();
+        c(GRAY, repeat('-', 64));
+        System.out.println();
+
+        if (points.isEmpty()) {
+            c(GRAY, "  No snapshots in range.");
+            System.out.println();
+            return;
+        }
+
+        int max = points.stream().mapToInt(TrendPoint::totalTokens).max().orElse(1);
+        int barWidth = Math.min(40, Math.max(8, 64 - 18));
+        for (TrendPoint p : points) {
+            int w = (int) ((double) p.totalTokens() / max * barWidth);
+            System.out.printf(Locale.ROOT, "  %-12s  ", p.label());
+            color(GREEN, repeat('#', Math.max(0, w)));
+            System.out.printf(Locale.ROOT, " %5d req  %,7d tok%n",
+                    p.requestCount(), p.totalTokens());
+        }
+        System.out.println();
+        c(GRAY, "  Tip: copilot-lens trend --period=weekly|monthly --days=N");
+        System.out.println();
+    }
+
+    /** Confirmation line after a snapshot is persisted. */
+    public void printSnapshotConfirmation(Snapshot s, Path dir) {
+        printBanner();
+        c(BOLD, "Snapshot saved");
+        System.out.println();
+        c(GRAY, repeat('-', 64));
+        System.out.println();
+        System.out.printf(Locale.ROOT, "  Date              %s%n", s.date());
+        System.out.printf(Locale.ROOT, "  IDE               %s%n", s.ide());
+        System.out.printf(Locale.ROOT, "  Requests          %,d%n", s.requestCount());
+        System.out.printf(Locale.ROOT, "  Input tokens      %,d%n", s.totalInputTokens());
+        System.out.printf(Locale.ROOT, "  Output tokens     %,d%n", s.totalOutputTokens());
+        System.out.printf(Locale.ROOT, "  Total tokens      %,d%n", s.totalTokens());
+        System.out.println();
+        c(GRAY, "  File: " + dir.resolve(s.date() + ".json"));
         System.out.println();
     }
 

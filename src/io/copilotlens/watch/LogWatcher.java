@@ -38,8 +38,8 @@ public class LogWatcher {
     }
 
     public void watch() throws Exception {
-        System.out.println("👀 Canlı izleme: " + logFile);
-        System.out.println("Çıkmak için Ctrl+C\n");
+        System.out.println("👀 Live monitoring: " + logFile);
+        System.out.println("Press Ctrl+C to exit\n");
 
         // Mevcut dosyayı baseline al; yeni gelenler işlenir
         long startTime = System.currentTimeMillis();
@@ -62,7 +62,7 @@ public class LogWatcher {
                     }
                 }
             } catch (Exception e) {
-                System.err.println("Okuma hatası: " + e.getMessage());
+                System.err.println("Read error: " + e.getMessage());
             }
 
             TimeUnit.MILLISECONDS.sleep(500);

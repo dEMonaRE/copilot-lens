@@ -147,13 +147,16 @@ public class IncrementalState {
             if (i > 0) sb.append(",\n");
             sb.append("    {\"timestamp\": \"").append(r.timestamp())
               .append("\", \"ide\": \"").append(r.ide())
-              .append("\", \"endpoint\": \"").append(r.endpoint())
+              .append("\", \"endpoint\": \"").append(escape(r.endpoint()))
               .append("\", \"inputTokens\": ").append(r.inputTokens())
               .append(", \"outputTokens\": ").append(r.outputTokens())
               .append(", \"messageCount\": ").append(r.messageCount())
               .append(", \"summary\": \"").append(escape(r.summary()))
               .append("\", \"workspaceHint\": \"").append(escape(r.workspaceHint()))
-              .append("\"}");
+              .append("\", \"model\": \"").append(escape(r.model()))
+              .append("\", \"provider\": \"").append(escape(r.provider()))
+              .append("\", \"latencyMs\": ").append(r.latencyMs() == null ? "null" : r.latencyMs().toString())
+              .append("}");
         }
         sb.append("\n  ]\n}");
         return sb.toString();
@@ -161,14 +164,19 @@ public class IncrementalState {
 
     @SuppressWarnings("unchecked")
     private void parseCachedRequests(String content) {
-        // Simple regex-based JSON parsing (works for our own output)
-        // For real production use, use a JSON library
+        // Simple regex-based JSON parsing (works for our own output).
+        // Two formats supported: legacy (8 fields) and current (11 fields).
+        // Backward-compatible: missing optional fields default to null/0.
         java.util.regex.Pattern p = java.util.regex.Pattern.compile(
             "\\{\"timestamp\":\\s*\"([^\"]+)\",\\s*\"ide\":\\s*\"(\\w+)\"," +
-            "\\s*\"endpoint\":\\s*\"([^\"]+)\"," +
+            "\\s*\"endpoint\":\\s*\"([^\"]*)\"," +
             "\\s*\"inputTokens\":\\s*(\\d+),\\s*\"outputTokens\":\\s*(\\d+)," +
             "\\s*\"messageCount\":\\s*(\\d+),\\s*\"summary\":\\s*\"([^\"]*)\"," +
-            "\\s*\"workspaceHint\":\\s*\"([^\"]*)\"\\}");
+            "\\s*\"workspaceHint\":\\s*\"([^\"]*)\"" +
+            "(?:,\\s*\"model\":\\s*\"([^\"]*)\")?" +
+            "(?:,\\s*\"provider\":\\s*\"([^\"]*)\")?" +
+            "(?:,\\s*\"latencyMs\":\\s*(\\d+|null))?" +
+            "\\}");
         java.util.regex.Matcher m = p.matcher(content);
         while (m.find()) {
             try {
@@ -180,7 +188,15 @@ public class IncrementalState {
                 int msgs = Integer.parseInt(m.group(6));
                 String summary = m.group(7);
                 String ws = m.group(8);
-                cachedRequests.add(new CopilotRequest(ts, ide, endpoint, in, out, msgs, summary, ws));
+                String model = m.group(9);
+                String provider = m.group(10);
+                String latencyStr = m.group(11);
+                Integer latency = null;
+                if (latencyStr != null && !latencyStr.equals("null")) {
+                    try { latency = Integer.parseInt(latencyStr); } catch (Exception ignored) {}
+                }
+                cachedRequests.add(new CopilotRequest(ts, ide, endpoint, in, out, msgs,
+                        summary, ws, model, provider, latency));
             } catch (Exception ignored) {}
         }
     }
