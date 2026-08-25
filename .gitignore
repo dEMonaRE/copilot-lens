@@ -1,6 +1,5 @@
 # Build outputs
 out/
-lib/
 
 # Generated reports (don't commit user-specific analyses)
 copilot-lens-report.html

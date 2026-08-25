@@ -21,14 +21,21 @@ If not installed, get JDK from https://adoptium.net/ or your corporate portal.
 
 ### 2. Build
 
+**Git Bash:**
 ```bash
 cd /d/fe-workspace/copilot-lens
 ./build.sh
 ```
 
+**PowerShell / cmd** (runs in the current terminal — no new window):
+```powershell
+cd D:\fe-workspace\copilot-lens
+.\build.ps1
+```
+
 This will:
 - Check your JDK version
-- Download `jtokkit-0.6.1.jar` from Maven Central (one-time)
+- Download `jtokkit-1.1.0.jar` from Maven Central (one-time)
 - Download uses a `.download` extension first then renames to `.jar` to avoid Windows file-association prompts
 - Compile all `.java` files into `out/`
 
@@ -38,8 +45,8 @@ Expected output:
 OK 17.0.1 (...)
 OK --release 17
 ==> lib/ dizini
-==> jtokkit-0.6.1 indiriliyor (.download uzantisi ile)
-OK jtokkit indirildi (1535888 bytes)
+==> jtokkit-1.1.0 indiriliyor (.download uzantisi ile)
+OK jtokkit indirildi
 ==> Kaynak kodlar derleniyor
 OK Derleme basarili
 ```

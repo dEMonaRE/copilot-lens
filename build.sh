@@ -13,7 +13,7 @@ LIB_DIR="$PROJECT_ROOT/lib"
 SRC_DIR="$PROJECT_ROOT/src"
 OUT_DIR="$PROJECT_ROOT/out"
 
-JTOKKIT_VERSION="0.6.1"
+JTOKKIT_VERSION="1.1.0"
 JTOKKIT_FINAL="$LIB_DIR/jtokkit-${JTOKKIT_VERSION}.jar"
 # Gecici indirme adlari: ".jar" icermez, Windows bunlari tetiklemez
 JTOKKIT_TMP="$LIB_DIR/.jtokkit-${JTOKKIT_VERSION}.download"
@@ -75,13 +75,16 @@ fi
 echo "==> Kaynak kodlar derleniyor"
 mkdir -p "$OUT_DIR"
 
-SOURCES=$(find "$SRC_DIR" -name "*.java")
+# Use bash's globstar instead of `find` — avoids Windows' find.exe
+# shadowing the GNU one when System32 appears earlier in PATH.
+shopt -s globstar nullglob
+SOURCES=("$SRC_DIR"/**/*.java)
 
 "$JAVAC" -d "$OUT_DIR" \
          -cp "$JTOKKIT_FINAL" \
          --release "$RELEASE_TARGET" \
          -Xlint:all \
-         $SOURCES
+         "${SOURCES[@]}"
 
 echo "OK Derleme basarili"
 echo ""

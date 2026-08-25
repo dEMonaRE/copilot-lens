@@ -16,7 +16,8 @@ RTK-style CLI: **read IDE logs, count tokens locally, show what you're spending 
 
 ```bash
 # Build (downloads jtokkit jar, compiles)
-./build.sh
+./build.sh                     # Git Bash
+.\build.ps1                    # PowerShell / cmd (uses current terminal)
 
 # Initialize config (writes ./config.properties for IDE log paths)
 ./copilot-lens.sh init        # Git Bash
@@ -72,6 +73,7 @@ state.enabled=true
 copilot-lens/
 ├── README.md
 ├── build.sh                 Build script (downloads jtokkit jar)
+├── build.ps1                PowerShell wrapper for build.sh (current terminal)
 ├── install.sh               Backward-compat thin wrapper around `install` subcommand
 ├── copilot-lens.sh          Bash wrapper (script source)
 ├── copilot-lens.ps1         PowerShell wrapper (5.1 compatible)
