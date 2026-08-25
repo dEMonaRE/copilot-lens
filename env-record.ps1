@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Calisma ortami icin gerekli dizinleri kullanici PATH'ine ekler.
 
