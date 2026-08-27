@@ -33,7 +33,7 @@ copilot-lens
 .\copilot-lens.ps1
 ```
 
-See [INSTALL.md](docs/INSTALL.md) for full setup, [USAGE.md](docs/USAGE.md) for command reference, [FEATURES.md](docs/FEATURES.md) for feature deep-dives.
+See [INSTALL.md](docs/INSTALL.md) for full setup, [USAGE.md](docs/USAGE.md) for command reference, [FEATURES.md](docs/FEATURES.md) for feature deep-dives, and [LOG_ACTIVATION.md](docs/LOG_ACTIVATION.md) for verbose-log setup (required for VSCode / IntelliJ / Cursor / Windsurf).
 
 ## Commands
 
@@ -104,7 +104,8 @@ copilot-lens/
 ├── docs/
 │   ├── INSTALL.md
 │   ├── USAGE.md
-│   └── FEATURES.md
+│   ├── FEATURES.md
+│   └── LOG_ACTIVATION.md
 ├── lib/                     Downloaded jars (created by build.sh)
 └── out/                     Compiled classes (created by build.sh)
 ```

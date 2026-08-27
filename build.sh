@@ -83,6 +83,7 @@ SOURCES=("$SRC_DIR"/**/*.java)
 "$JAVAC" -d "$OUT_DIR" \
          -cp "$JTOKKIT_FINAL" \
          --release "$RELEASE_TARGET" \
+         -encoding UTF-8 \
          -Xlint:all \
          "${SOURCES[@]}"
 

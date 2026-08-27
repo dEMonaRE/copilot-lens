@@ -28,7 +28,7 @@ $ErrorActionPreference = 'Stop'
 # --- YOLLAR BURADA ---
 # Yeni arac eklemek icin: @{ Name = 'gorunen-ad'; Dir = 'C:\tam\yol' } formatinda satir ekle.
 $Paths = @(
-    @{ Name = 'rtkx';          Dir = 'C:\' },
+    @{ Name = 'rtk';          Dir = 'D:\' },
     @{ Name = 'copilot-lens'; Dir = 'C:\workspace\copilot-lens' }
 )
 

@@ -121,11 +121,13 @@ public class HtmlReporter {
     private String renderTopRows(List<CopilotRequest> requests) {
         StringBuilder sb = new StringBuilder();
         int max = Math.max(1, requests.stream().mapToInt(CopilotRequest::inputTokens).max().orElse(1));
+        java.time.format.DateTimeFormatter timeFmt =
+                java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
         for (CopilotRequest r : requests) {
             int widthPct = (int) (100.0 * r.inputTokens() / max);
             String badge = ideBadge(r.ide());
             sb.append("    <tr>")
-              .append("<td>").append(r.timestamp().toString().substring(11, 19)).append("</td>")
+              .append("<td>").append(r.timestamp().toLocalTime().format(timeFmt)).append("</td>")
               .append("<td>").append(badge).append("</td>")
               .append("<td>").append(String.format(Locale.ROOT, "%,d", r.inputTokens())).append("</td>")
               .append("<td class='summary'>").append(escape(r.summary())).append("</td>")

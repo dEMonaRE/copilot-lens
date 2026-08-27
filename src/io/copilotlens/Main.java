@@ -21,6 +21,7 @@ import io.copilotlens.reporter.HtmlReporter;
 import io.copilotlens.reporter.JsonReporter;
 import io.copilotlens.snapshot.Snapshot;
 import io.copilotlens.snapshot.SnapshotStore;
+import io.copilotlens.util.DebugLog;
 import io.copilotlens.watch.LogWatcher;
 
 import java.nio.file.Files;
@@ -68,6 +69,9 @@ public class Main {
                 return;
             }
 
+            DebugLog.info("command=" + params.command + " ide=" + params.ide +
+                    " log=" + (params.logFile == null ? "<auto>" : params.logFile));
+
             switch (params.command) {
                 case LOG, GAIN, REPORT -> runReport(params);
                 case WATCH -> runWatch(params);
@@ -80,8 +84,10 @@ public class Main {
             }
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
-            if (Boolean.getBoolean("copilot-lens.debug")) {
+            DebugLog.error("uncaught exception: " + e.getMessage(), e);
+            if (DebugLog.isEnabled() || Boolean.getBoolean("copilot-lens.debug")) {
                 e.printStackTrace();
+                System.err.println("(stack trace logged to ~/.copilot-lens/debug.log)");
             }
             System.exit(1);
         }

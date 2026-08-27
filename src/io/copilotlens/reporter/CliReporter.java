@@ -144,7 +144,7 @@ public class CliReporter {
 
             System.out.printf(Locale.ROOT, "  %2d. %s%s  %,6d tok  ",
                     i + 1,
-                    r.timestamp().toString().substring(11, 19),
+                    formatTime(r.timestamp()),
                     ideBadge,
                     r.inputTokens());
             c(GREEN, repeat('#', barWidth));
@@ -305,7 +305,7 @@ public class CliReporter {
                 c(GRAY, "  Token source: ");
                 System.out.printf(Locale.ROOT, "%,d reported / %,d estimated / %,d unknown%n",
                         r.reportedRequestCount(), r.estimatedRequestCount(), r.noneTokenRequestCount());
-                c(GRAY, "    (reported = log'dan usage satırı; estimated = yerel BPE sayımı; unknown = tokenless)");
+                c(GRAY, "    (reported = log usage line; estimated = local BPE; unknown = tokenless)");
                 System.out.println();
             }
         }
@@ -330,6 +330,14 @@ public class CliReporter {
             case CURSOR   -> colorStr(CYAN, " Cursor");
             case WINDSURF -> colorStr(RED, " Wndsrf");
         };
+    }
+
+    /**
+     * LocalDateTime.toString() saniye 0 olduğunda HH:MM (16 char) döner; biz
+     * her zaman HH:MM:SS istiyoruz. DateTimeFormatter ile güvenli biçimde formatlar.
+     */
+    private static String formatTime(java.time.LocalDateTime ts) {
+        return ts.toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
     }
 
     /** Render the ASCII trend chart for the given points. */

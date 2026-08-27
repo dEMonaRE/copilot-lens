@@ -3,9 +3,8 @@
 ## Quick Start
 
 ```bash
-# 1. Enable verbose log in your IDE (do this once)
-#    VSCode  : F1 -> Developer: Set Log Level -> GitHub Copilot Chat: Trace
-#    IntelliJ: Help -> Diagnostic Tools -> Debug Log Settings -> Add: #com.github.copilot:trace
+# 1. Enable verbose log in your IDE (do this once) — see docs/LOG_ACTIVATION.md
+#    Covers VSCode, IntelliJ, Cursor, and Windsurf.
 
 # 2. Use Copilot for a while (inline suggestions, chat completions)
 
@@ -164,11 +163,11 @@ Disable with `cache.enabled=false` in `config.properties`.
 
 ## Enabling Verbose Logs
 
-Copilot's verbose log is **OFF by default** in both IDEs. Without enabling it, copilot-lens will print `Log file not found` even though the IDE is running — the log files simply do not exist yet.
+Copilot's verbose log is **OFF by default** in every supported IDE. Without enabling it, copilot-lens will print `Log file not found` even though the IDE is running — the log files simply do not exist yet.
 
-Full step-by-step instructions for both IDEs (including verification commands and how to disable again):
+Full step-by-step instructions for VSCode, IntelliJ, Cursor, and Windsurf (menu paths, verification commands, how to disable):
 
-→ See [INSTALL.md → "Enable Verbose Log"](INSTALL.md#enable-verbose-log-required-for-copilot-lens-to-find-anything)
+→ See [LOG_ACTIVATION.md](LOG_ACTIVATION.md)
 
 ## Output Interpretation
 
@@ -234,3 +233,30 @@ copilot-lens --no-ansi > /dev/null
 ```
 
 Combine with `export json` for trend tracking.
+
+## Complementary: RTK Token Saver
+
+If you also drive AI assistants (Claude Code, etc.) while working with copilot-lens, **RTK** can dramatically cut the token cost of their shell commands. Some corporate policies block rtk from running on Windows machines — in that case copilot-lens remains your fallback for *local IDE log analysis*, while RTK handles *AI-side* token savings.
+
+**Quick start (Windows):**
+
+1. Download the latest rtk Windows binary:
+   https://github.com/rtk-ai/rtk/releases/download/v0.45.0/rtk-x86_64-pc-windows-msvc.zip
+2. Extract somewhere on `PATH` (e.g. `~/.local/bin`).
+3. Use `env-record.ps1` to persist the registry entry that the proxy relies on with rtk.exe path:
+   ```bash
+   env-record.ps1
+   ```
+4. Initialize AI skill savings:
+   ```bash
+   rtk init -g --copilot
+   ```
+
+From this point on, common shell commands (`git status`, `npm test`, `cat *.log`, `grep` etc.) routed through `rtk` return the same information in a fraction of the tokens.
+
+**Why this is suggested alongside copilot-lens:** copilot-lens reduces *your IDE's* token spend (Copilot Chat calls); RTK reduces *your AI assistant's* token spend (shell commands the assistant runs). Together they cover both sides of the cost.
+
+For full setup details, troubleshooting, and supported commands see:
+https://github.com/rtk-ai/rtk/blob/develop/README.md
+
+> **Note:** If your organization's endpoint security policy prevents rtk from running on Windows, copilot-lens continues to work fully on its own. RTK is purely complementary.
