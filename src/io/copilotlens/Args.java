@@ -10,7 +10,7 @@ import java.nio.file.Paths;
 public class Args {
 
     public enum Command { LOG, WATCH, GAIN, DISCOVER, EXPORT, REPORT, INIT, SNAPSHOT, TREND, INSTALL }
-    public enum Ide { IDE_AUTO, IDE_VSCODE, IDE_INTELLIJ }
+    public enum Ide { IDE_AUTO, IDE_VSCODE, IDE_INTELLIJ, IDE_CURSOR, IDE_WINDSURF }
 
     public Command command = Command.LOG;
     public Ide ide = Ide.IDE_AUTO;
@@ -51,6 +51,8 @@ public class Args {
                         a.ide = switch (val) {
                             case "vscode", "vsc", "code" -> Ide.IDE_VSCODE;
                             case "idea", "intellij", "jetbrains" -> Ide.IDE_INTELLIJ;
+                            case "cursor" -> Ide.IDE_CURSOR;
+                            case "windsurf", "codeium" -> Ide.IDE_WINDSURF;
                             default -> Ide.IDE_AUTO;
                         };
                     } else if (arg.startsWith("--log=")) {

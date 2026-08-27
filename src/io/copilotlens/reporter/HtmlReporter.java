@@ -70,6 +70,8 @@ public class HtmlReporter {
         sb.append("    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }\n");
         sb.append("    .badge-vsc { background: #0969da33; color: var(--accent); }\n");
         sb.append("    .badge-id { background: #8957e533; color: #8957e5; }\n");
+        sb.append("    .badge-cursor { background: #00b8d433; color: #00b8d4; }\n");
+        sb.append("    .badge-windsurf { background: #7c4dff33; color: #7c4dff; }\n");
         sb.append("    code { background: var(--card); padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 13px; }\n");
         sb.append("    .empty { color: var(--muted); font-style: italic; }\n");
         sb.append("  </style>\n");
@@ -108,6 +110,7 @@ public class HtmlReporter {
         sb.append("    <p>Refresh: <code>copilot-lens report</code></p>\n");
         sb.append("    <p>Live monitoring: <code>copilot-lens watch</code></p>\n");
         sb.append("    <p>Snapshot: <code>copilot-lens snapshot</code> &middot; Trend: <code>copilot-lens trend</code></p>\n");
+        appendTokenSourceFooter(sb, report);
         sb.append("  </div>\n");
         sb.append("</body>\n");
         sb.append("</html>\n");
@@ -120,9 +123,7 @@ public class HtmlReporter {
         int max = Math.max(1, requests.stream().mapToInt(CopilotRequest::inputTokens).max().orElse(1));
         for (CopilotRequest r : requests) {
             int widthPct = (int) (100.0 * r.inputTokens() / max);
-            String badge = r.ide() == CopilotRequest.Ide.VSCODE
-                    ? "<span class='badge badge-vsc'>VSCode</span>"
-                    : "<span class='badge badge-id'>IDEA</span>";
+            String badge = ideBadge(r.ide());
             sb.append("    <tr>")
               .append("<td>").append(r.timestamp().toString().substring(11, 19)).append("</td>")
               .append("<td>").append(badge).append("</td>")
@@ -132,6 +133,30 @@ public class HtmlReporter {
               .append("</tr>\n");
         }
         return sb.toString();
+    }
+
+    private String ideBadge(CopilotRequest.Ide ide) {
+        return switch (ide) {
+            case VSCODE   -> "<span class='badge badge-vsc'>VSCode</span>";
+            case INTELLIJ -> "<span class='badge badge-id'>IDEA</span>";
+            case CURSOR   -> "<span class='badge badge-cursor'>Cursor</span>";
+            case WINDSURF -> "<span class='badge badge-windsurf'>Windsurf</span>";
+        };
+    }
+
+    private void appendTokenSourceFooter(StringBuilder sb, Report report) {
+        int sources = 0;
+        if (report.reportedRequestCount() > 0) sources++;
+        if (report.estimatedRequestCount() > 0) sources++;
+        if (report.noneTokenRequestCount() > 0) sources++;
+        if (sources <= 1) return;
+        sb.append("    <p class=\"meta\">Token source: ")
+          .append(String.format(Locale.ROOT, "%,d reported", report.reportedRequestCount()))
+          .append(" / ")
+          .append(String.format(Locale.ROOT, "%,d estimated", report.estimatedRequestCount()))
+          .append(" / ")
+          .append(String.format(Locale.ROOT, "%,d unknown", report.noneTokenRequestCount()))
+          .append(" (reported = log usage; estimated = local BPE; unknown = tokenless)</p>\n");
     }
 
     /**

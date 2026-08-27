@@ -156,7 +156,8 @@ public class IncrementalState {
               .append("\", \"model\": \"").append(escape(r.model()))
               .append("\", \"provider\": \"").append(escape(r.provider()))
               .append("\", \"latencyMs\": ").append(r.latencyMs() == null ? "null" : r.latencyMs().toString())
-              .append("}");
+              .append(", \"tokenSource\": \"").append(r.tokenSource() == null ? "NONE" : r.tokenSource().name())
+              .append("\"}");
         }
         sb.append("\n  ]\n}");
         return sb.toString();
@@ -165,8 +166,8 @@ public class IncrementalState {
     @SuppressWarnings("unchecked")
     private void parseCachedRequests(String content) {
         // Simple regex-based JSON parsing (works for our own output).
-        // Two formats supported: legacy (8 fields) and current (11 fields).
-        // Backward-compatible: missing optional fields default to null/0.
+        // Formats supported: legacy (8 fields), current (11 fields), newest (12 fields).
+        // Backward-compatible: missing optional fields default to null/0/ESTIMATED.
         java.util.regex.Pattern p = java.util.regex.Pattern.compile(
             "\\{\"timestamp\":\\s*\"([^\"]+)\",\\s*\"ide\":\\s*\"(\\w+)\"," +
             "\\s*\"endpoint\":\\s*\"([^\"]*)\"," +
@@ -176,6 +177,7 @@ public class IncrementalState {
             "(?:,\\s*\"model\":\\s*\"([^\"]*)\")?" +
             "(?:,\\s*\"provider\":\\s*\"([^\"]*)\")?" +
             "(?:,\\s*\"latencyMs\":\\s*(\\d+|null))?" +
+            "(?:,\\s*\"tokenSource\":\\s*\"(\\w+)\")?" +
             "\\}");
         java.util.regex.Matcher m = p.matcher(content);
         while (m.find()) {
@@ -195,8 +197,18 @@ public class IncrementalState {
                 if (latencyStr != null && !latencyStr.equals("null")) {
                     try { latency = Integer.parseInt(latencyStr); } catch (Exception ignored) {}
                 }
+                // TokenSource opsiyonel: eski cache kayıtları ESTIMATED kabul edilir
+                // (Format 1 BPE yolu) — sıfır token varsa NONE'a indirilir.
+                String tsStr = m.group(12);
+                CopilotRequest.TokenSource tokenSource;
+                if (tsStr != null) {
+                    try { tokenSource = CopilotRequest.TokenSource.valueOf(tsStr); }
+                    catch (Exception e) { tokenSource = (in + out) > 0 ? CopilotRequest.TokenSource.ESTIMATED : CopilotRequest.TokenSource.NONE; }
+                } else {
+                    tokenSource = (in + out) > 0 ? CopilotRequest.TokenSource.ESTIMATED : CopilotRequest.TokenSource.NONE;
+                }
                 cachedRequests.add(new CopilotRequest(ts, ide, endpoint, in, out, msgs,
-                        summary, ws, model, provider, latency));
+                        summary, ws, model, provider, latency, tokenSource));
             } catch (Exception ignored) {}
         }
     }

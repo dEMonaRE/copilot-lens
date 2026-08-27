@@ -13,8 +13,19 @@ public class TokenCounter {
     private final Encoding encoding;
 
     public TokenCounter() {
-        this.encoding = Encodings.newDefaultEncodingRegistry()
-                .getEncodingForModel(ModelType.GPT_4);
+        this(Encodings.newDefaultEncodingRegistry().getEncodingForModel(ModelType.GPT_4));
+    }
+
+    /**
+     * Explicit model seçimi. cl100k_base için GPT_4, o200k_base için GPT_4O vb.
+     * Varsayılan olarak GPT_4 (Copilot'un gpt-4* trafiği için ~%5 doğruluk).
+     */
+    public TokenCounter(ModelType modelType) {
+        this(Encodings.newDefaultEncodingRegistry().getEncodingForModel(modelType));
+    }
+
+    public TokenCounter(Encoding encoding) {
+        this.encoding = encoding;
     }
 
     public int count(String text) {

@@ -140,9 +140,7 @@ public class CliReporter {
             CopilotRequest r = largest.get(i);
             int barWidth = Math.max(1, (int) (35.0 * r.inputTokens() / maxTokens));
 
-            String ideBadge = r.ide() == CopilotRequest.Ide.VSCODE
-                    ? colorStr(BLUE, " VSCode")
-                    : colorStr(MAGENTA, " IDEA ");
+            String ideBadge = ideBadge(r.ide());
 
             System.out.printf(Locale.ROOT, "  %2d. %s%s  %,6d tok  ",
                     i + 1,
@@ -296,6 +294,22 @@ public class CliReporter {
             System.out.println();
         }
 
+        // Token kaynak ayrımı — yalnızca birden fazla kaynak varsa göster
+        int total = r.reportedRequestCount() + r.estimatedRequestCount() + r.noneTokenRequestCount();
+        if (total > 0 && (r.reportedRequestCount() + r.estimatedRequestCount() + r.noneTokenRequestCount()) > 0) {
+            int sources = 0;
+            if (r.reportedRequestCount() > 0) sources++;
+            if (r.estimatedRequestCount() > 0) sources++;
+            if (r.noneTokenRequestCount() > 0) sources++;
+            if (sources > 1) {
+                c(GRAY, "  Token source: ");
+                System.out.printf(Locale.ROOT, "%,d reported / %,d estimated / %,d unknown%n",
+                        r.reportedRequestCount(), r.estimatedRequestCount(), r.noneTokenRequestCount());
+                c(GRAY, "    (reported = log'dan usage satırı; estimated = yerel BPE sayımı; unknown = tokenless)");
+                System.out.println();
+            }
+        }
+
         c(GRAY, "  HTML report : copilot-lens report");
         System.out.println();
         c(GRAY, "  History     : copilot-lens gain --history");
@@ -306,6 +320,16 @@ public class CliReporter {
         System.out.println();
         c(GRAY, "  JSON export : copilot-lens export json");
         System.out.println();
+    }
+
+    /** IDE renkli badge. VSCode mavi, IntelliJ mor, Cursor cyan, Windsurf magenta. */
+    private String ideBadge(CopilotRequest.Ide ide) {
+        return switch (ide) {
+            case VSCODE   -> colorStr(BLUE, " VSCode");
+            case INTELLIJ -> colorStr(MAGENTA, " IDEA ");
+            case CURSOR   -> colorStr(CYAN, " Cursor");
+            case WINDSURF -> colorStr(RED, " Wndsrf");
+        };
     }
 
     /** Render the ASCII trend chart for the given points. */

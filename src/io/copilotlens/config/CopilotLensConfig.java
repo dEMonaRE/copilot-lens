@@ -17,6 +17,8 @@ import java.util.Properties;
  * Config keys:
  *   log.vscode     VSCode output_logging glob
  *   log.idea       IntelliJ idea.log glob
+ *   log.cursor     Cursor output_logging glob (VSCode-fork)
+ *   log.windsurf   Windsurf output_logging glob (Codeium VSCode-fork)
  *   state.dir      Where to keep incremental state + cache
  *   state.enabled  Track file byte offsets (delta scans)
  *   cache.enabled  Cache parsed requests across runs
@@ -38,6 +40,12 @@ public class CopilotLensConfig {
                 "${APPDATA}/Code/logs/**/output_logging*.log,"
               + "${APPDATA}/Code/logs/**/GitHub.copilot-chat/GitHub Copilot Chat.log");
         props.setProperty("log.idea", "${LOCALAPPDATA}/JetBrains/**/log/idea.log");
+        // Cursor: VSCode-fork; aynı extension-host log konvansiyonu
+        props.setProperty("log.cursor", "${APPDATA}/Cursor/logs/**/output_logging*.log");
+        // Windsurf: Codeium'un VSCode-fork'u; generic output_logging_*.log kullanılır.
+        // Cascade AI'ın kendi iç logu (Lifeguard.log) serbest formatlı olduğu için
+        // parse edilmez — sadece GitHub Copilot Chat benzeri extension logları okunur.
+        props.setProperty("log.windsurf", "${APPDATA}/Windsurf/logs/**/output_logging*.log");
         props.setProperty("state.dir", DEFAULT_HOME.toString());
         props.setProperty("state.enabled", "true");
         props.setProperty("cache.enabled", "true");
@@ -153,6 +161,14 @@ public class CopilotLensConfig {
 
             # IntelliJ IDEA Copilot log (Windows default)
             log.idea=${LOCALAPPDATA}/JetBrains/**/log/idea.log
+
+            # Cursor (VSCode fork) Copilot log (Windows default)
+            log.cursor=${APPDATA}/Cursor/logs/**/output_logging*.log
+
+            # Windsurf (Codeium VSCode fork) log (Windows default)
+            # Cascade AI'in kendi ic logu (Lifeguard.log) serbest formatli,
+            # bu yuzden parse edilmez — sadece extension-host logu kullanilir.
+            log.windsurf=${APPDATA}/Windsurf/logs/**/output_logging*.log
 
             # --- Tool behavior ---
 

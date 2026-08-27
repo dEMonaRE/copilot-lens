@@ -19,9 +19,12 @@ import java.util.regex.Pattern;
  *   2) Yeni GitHub Copilot Chat (>= 0.60) log formatı:
  *      [fetchCompletions] Request <id> at <url> finished with <status> after <ms>ms
  *      [ccreq:<id>.copilotmd] | success | <model> | <ms>ms | [<provider>]
- *      Yeni format token sayılarını içermez — model + provider + latency döner.
+ *      Yeni format token sayılarını içermez — model + provider + latency döner;
+ *      look-ahead ile JSON body bulunursa BPE ile tahmin edilir.
  *
- * Token bilgisi yeni mimaride log'a düşmediği için proxy metrikler kullanılır.
+ * Token bilgisi yeni mimaride log'a düşmediği için proxy metrikler kullanılır;
+ * mümkün olduğunda look-ahead + BPE ile yerel tahmin yapılır ve
+ * TokenSource.ESTIMATED olarak işaretlenir.
  */
 public class VsCodeParser implements LogParser {
 
@@ -33,6 +36,16 @@ public class VsCodeParser implements LogParser {
     private static final Pattern ROLE = Pattern.compile("\"role\"");
     private static final Pattern CONTENT = Pattern.compile("\"content\"\\s*:\\s*\"([^\"]{0,120})");
 
+    // Format 2 body look-ahead sinyalleri — hepsi eşzamanlı eşleşmeli
+    private static final Pattern BODY_HAS_ROLE = Pattern.compile("\"role\"\\s*:\\s*\"");
+    private static final Pattern BODY_HAS_CONTENT = Pattern.compile("\"content\"\\s*:");
+    private static final Pattern BODY_HAS_MESSAGES = Pattern.compile("\"messages\"\\s*:\\s*\\[");
+
+    /** Format 2 body look-ahead: kaç satır ileriye bakılır (Format 1 ile aynı pencere). */
+    private static final int LOOK_AHEAD_LIMIT = 8;
+    /** Body aday kabulü için satır başına maksimum uzunluk. */
+    private static final int MAX_BODY_LINE = 8 * 1024;
+
     // fetchCompletions: "...Request <uuid> at <https://...> finished with <status> after <float>ms"
     private static final Pattern FETCH_COMPLETIONS = Pattern.compile(
             "\\[fetchCompletions\\]\\s+Request\\s+\\S+\\s+at\\s+<(https?://[^>]+)>\\s+finished\\s+with\\s+(\\d+)\\s+status\\s+after\\s+([\\d.]+)ms");
@@ -42,9 +55,19 @@ public class VsCodeParser implements LogParser {
             "ccreq:\\S+\\.copilotmd\\s*\\|\\s*success\\s*\\|\\s*(\\S+)\\s*\\|\\s*(\\d+)ms\\s*\\|\\s*\\[([^\\]]+)\\]");
 
     private final TokenCounter counter;
+    private final CopilotRequest.Ide ideTag;
 
     public VsCodeParser(TokenCounter counter) {
+        this(counter, CopilotRequest.Ide.VSCODE);
+    }
+
+    /**
+     * Cursor / Windsurf gibi VSCode-fork IDE'ler için Ide etiketi override.
+     * Aynı regex/log mantığı paylaşılır; sadece üretilen kayıtların Ide alanı değişir.
+     */
+    public VsCodeParser(TokenCounter counter, CopilotRequest.Ide ideTag) {
         this.counter = counter;
+        this.ideTag = ideTag;
     }
 
     @Override
@@ -72,7 +95,7 @@ public class VsCodeParser implements LogParser {
                 String summary = extractSummary(body.toString());
                 String workspace = extractWorkspace(body.toString());
 
-                result.add(CopilotRequest.of(ts, CopilotRequest.Ide.VSCODE,
+                result.add(CopilotRequest.of(ts, ideTag,
                         "/v1/chat/completions", tokens, 0, msgs, summary, workspace));
             }
 
@@ -84,7 +107,8 @@ public class VsCodeParser implements LogParser {
                 if (!result.isEmpty()) {
                     CopilotRequest last = result.get(result.size() - 1);
                     if (last.outputTokens() == 0) {
-                        result.set(result.size() - 1, CopilotRequest.of(
+                        // usage satırı log'dan geldi: REPORTED olarak işaretle
+                        result.set(result.size() - 1, CopilotRequest.ofReported(
                                 last.timestamp(), last.ide(), last.endpoint(),
                                 inTokens > 0 ? inTokens : last.inputTokens(),
                                 outTokens, last.messageCount(),
@@ -102,10 +126,19 @@ public class VsCodeParser implements LogParser {
                 if (status != 200) continue;  // sadece başarılı istekleri say
 
                 String model = extractModelFromUrl(url);
-                String provider = null;
                 String summary = url;
-                result.add(CopilotRequest.proxy(ts, CopilotRequest.Ide.VSCODE,
-                        url, model, provider, latency, summary));
+
+                // Body look-ahead: etraf satırlarda JSON body varsa BPE ile token say
+                String body = lookAheadForBody(lines, i + 1);
+                if (body != null) {
+                    int input = counter.count(body);
+                    result.add(CopilotRequest.ofEstimated(ts, ideTag,
+                            url, input, 0, 1, summary, null,
+                            model, null, latency));
+                } else {
+                    result.add(CopilotRequest.proxy(ts, ideTag,
+                            url, model, null, latency, summary));
+                }
             }
 
             // ---- Format 2 (yeni): ccreq success ----
@@ -126,12 +159,13 @@ public class VsCodeParser implements LogParser {
                                         last.endpoint(), last.inputTokens(),
                                         last.outputTokens(), last.messageCount(),
                                         last.summary(), last.workspaceHint(),
-                                        last.model(), provider, latency));
+                                        last.model(), provider, latency,
+                                        last.tokenSource()));
                         continue;
                     }
                 }
 
-                result.add(CopilotRequest.proxy(ts, CopilotRequest.Ide.VSCODE,
+                result.add(CopilotRequest.proxy(ts, ideTag,
                         "/v1/engines/" + model + "/completions",
                         model, provider, latency,
                         "ccreq success (" + model + ", " + provider + ")"));
@@ -142,7 +176,7 @@ public class VsCodeParser implements LogParser {
     }
 
     @Override
-    public CopilotRequest.Ide ide() { return CopilotRequest.Ide.VSCODE; }
+    public CopilotRequest.Ide ide() { return ideTag; }
 
     private LocalDateTime extractTimestamp(String line) {
         Matcher m = TIMESTAMP_SPACE.matcher(line);
@@ -185,5 +219,60 @@ public class VsCodeParser implements LogParser {
         // https://proxy.individual.githubcopilot.com/v1/engines/gpt-41-copilot/completions
         Matcher m = Pattern.compile("/v1/engines/([^/]+)/").matcher(url);
         return m.find() ? m.group(1) : null;
+    }
+
+    /**
+     * Format 2 ([fetchCompletions]) hattı için, başlangıç indeksinden itibaren
+     * en fazla {@link #LOOK_AHEAD_LIMIT} satır içinde JSON request body arar.
+     * Bulursa BPE-count edilecek şekilde tek string olarak birleştirir;
+     * bulamazsa null döner.
+     *
+     * Hevistik:
+     *  - Satır hem "role" hem "content" veya "messages" içermeli
+     *  - Satır uzunluğu MAX_BODY_LINE'ı aşmamalı
+     *  - Yeni bir timestamped log satırına ulaşırsak bakmayı bırakırız
+     *  - İlk body satırından sonra JSON bracket derinliğini izleyerek
+     *    body kapanana kadar toplarız (body birden fazla satıra bölünebilir)
+     */
+    private String lookAheadForBody(List<String> lines, int startIdx) {
+        int endIdx = Math.min(startIdx + LOOK_AHEAD_LIMIT, lines.size());
+        for (int k = startIdx; k < endIdx; k++) {
+            String cand = lines.get(k);
+            if (cand == null || cand.isEmpty()) continue;
+            // Yeni timestamped log satırı: bu artık farklı bir request
+            if (TIMESTAMP_SPACE.matcher(cand).find() || TIMESTAMP_ISO.matcher(cand).find()) {
+                return null;
+            }
+            // Yanlış pozitif filtreleri — body adayının tüm sinyalleri taşıması şart
+            if (cand.length() > MAX_BODY_LINE) continue;
+            if (!BODY_HAS_ROLE.matcher(cand).find()) continue;
+            if (!BODY_HAS_CONTENT.matcher(cand).find() && !BODY_HAS_MESSAGES.matcher(cand).find()) {
+                continue;
+            }
+
+            // Body buradan başlıyor: JSON bracket derinliğini izleyerek topla
+            StringBuilder sb = new StringBuilder(cand.trim());
+            int depth = 0;
+            for (int p = 0; p < cand.length(); p++) {
+                char ch = cand.charAt(p);
+                if (ch == '{') depth++;
+                else if (ch == '}') depth--;
+            }
+            int j = k + 1;
+            while (depth > 0 && j < endIdx) {
+                String next = lines.get(j);
+                if (next != null && !next.isEmpty()) {
+                    sb.append(' ').append(next.trim());
+                    for (int p = 0; p < next.length(); p++) {
+                        char ch = next.charAt(p);
+                        if (ch == '{') depth++;
+                        else if (ch == '}') depth--;
+                    }
+                }
+                j++;
+            }
+            return sb.toString();
+        }
+        return null;
     }
 }

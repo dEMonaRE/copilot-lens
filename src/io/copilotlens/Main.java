@@ -14,6 +14,7 @@ import io.copilotlens.detector.IdeDetector;
 import io.copilotlens.parser.CopilotRequest;
 import io.copilotlens.parser.IntelliJParser;
 import io.copilotlens.parser.LogParser;
+import io.copilotlens.parser.VsCodeForkParser;
 import io.copilotlens.parser.VsCodeParser;
 import io.copilotlens.reporter.CliReporter;
 import io.copilotlens.reporter.HtmlReporter;
@@ -382,26 +383,28 @@ public class Main {
         switch (params.ide) {
             case IDE_VSCODE -> detected = detector.findVsCodeLog();
             case IDE_INTELLIJ -> detected = detector.findIntelliJLog();
+            case IDE_CURSOR -> detected = detector.findCursorLog();
+            case IDE_WINDSURF -> detected = detector.findWindsurfLog();
             default -> detected = detector.findAnyLog();
         }
 
         return detected.orElseThrow(() -> {
             String msg = "Log file not found.\n";
-            msg += "  Pass --log=<path> manually, or enable verbose log:\n";
-            msg += "  - VSCode: F1 -> 'Developer: Set Log Level' -> 'GitHub Copilot Chat: Trace'\n";
-            msg += "  - IntelliJ: Help -> Diagnostic Tools -> Debug Log Settings\n";
-            msg += "              -> Add: #com.github.copilot:trace";
+            msg += "  Pass --log=<path> manually, then enable verbose log\n";
+            msg += "  for the IDE you use. See docs/LOG_ACTIVATION.md for\n";
+            msg += "  VSCode, IntelliJ, Windsurf, and Cursor setup steps.";
             return new RuntimeException(msg);
         });
     }
 
     static LogParser createParser(Path log, Args params) {
         TokenCounter counter = new TokenCounter();
-        String name = log.getFileName().toString().toLowerCase();
-        if (params.ide == Args.Ide.IDE_INTELLIJ || name.contains("idea")) {
-            return new IntelliJParser(counter);
-        }
-        return new VsCodeParser(counter);
+        return switch (params.ide) {
+            case IDE_INTELLIJ -> new IntelliJParser(counter);
+            case IDE_CURSOR -> new VsCodeForkParser(counter, CopilotRequest.Ide.CURSOR);
+            case IDE_WINDSURF -> new VsCodeForkParser(counter, CopilotRequest.Ide.WINDSURF);
+            default -> new VsCodeParser(counter);
+        };
     }
 
     static void printHelp() {
@@ -425,7 +428,7 @@ public class Main {
               install          Copy wrapper to ~/.local/bin and update PATH
 
             Options:
-              --ide=vscode|idea|auto   IDE selection (default: auto)
+              --ide=vscode|idea|cursor|windsurf|auto   IDE selection (default: auto)
               --log=<path>             Manual log file
               --period=daily|weekly|monthly   Trend grouping (default: daily)
               --days=N                 How many recent buckets to show (default: 30)
@@ -435,6 +438,8 @@ public class Main {
             Examples:
               copilot-lens
               copilot-lens watch --ide=idea
+              copilot-lens --ide=cursor
+              copilot-lens --ide=windsurf
               copilot-lens discover
               copilot-lens gain --history
               copilot-lens snapshot
@@ -444,9 +449,8 @@ public class Main {
               copilot-lens install
               copilot-lens --log=/path/to/custom.log
 
-            Enable log generation:
-              VSCode  : F1 -> Developer: Set Log Level -> GitHub Copilot Chat: Trace
-              IntelliJ: Help -> Diagnostic Tools -> Debug Log Settings -> #com.github.copilot:trace
+            Enable verbose log: see docs/LOG_ACTIVATION.md
+            (covers VSCode, IntelliJ, Cursor, Windsurf)
             """;
         System.out.println(help);
     }

@@ -66,12 +66,18 @@ public record Snapshot(
                 report.totalOutputTokens());
     }
 
+    /**
+     * Tek bir IDE kullanılmışsa onun adını, birden fazla IDE kullanılmışsa
+     * "mixed" döndürür. VSCode/IntelliJ/Cursor/Windsurf dahil tüm Ide değerleri desteklenir.
+     */
     private static String detectIde(List<CopilotRequest> reqs) {
         if (reqs.isEmpty()) return "mixed";
-        boolean hasVscode = reqs.stream().anyMatch(r -> r.ide() == CopilotRequest.Ide.VSCODE);
-        boolean hasIdea = reqs.stream().anyMatch(r -> r.ide() == CopilotRequest.Ide.INTELLIJ);
-        if (hasVscode && hasIdea) return "mixed";
-        if (hasVscode) return "vscode";
-        return "idea";
+        java.util.Set<CopilotRequest.Ide> distinct = reqs.stream()
+                .map(CopilotRequest::ide)
+                .collect(java.util.stream.Collectors.toSet());
+        if (distinct.size() == 1) {
+            return distinct.iterator().next().name().toLowerCase(Locale.ROOT);
+        }
+        return "mixed";
     }
 }

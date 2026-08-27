@@ -33,14 +33,19 @@ public class StatsAggregator {
             Map<String, Integer> modelDistribution,
             Map<String, Integer> providerDistribution,
             double avgLatencyMs,
-            int latencySampleCount
+            int latencySampleCount,
+            // Token kaynak ayrımı (Format 1 usage vs BPE tahmini vs tokenless)
+            int reportedRequestCount,
+            int estimatedRequestCount,
+            int noneTokenRequestCount
     ) {}
 
     public Report aggregate(List<CopilotRequest> requests) {
         if (requests.isEmpty()) {
             return new Report(0, 0, 0, 0, 0, 0, 0, List.of(), List.of(),
                     Map.of(), Map.of(), 0, 0,
-                    Map.of(), Map.of(), 0, 0);
+                    Map.of(), Map.of(), 0, 0,
+                    0, 0, 0);
         }
 
         int count = requests.size();
@@ -88,12 +93,23 @@ public class StatsAggregator {
         }
         double avgLatency = latencyCount > 0 ? (double) latencySum / latencyCount : 0;
 
+        // Token kaynak ayrımı (REPORTED/ESTIMATED/NONE)
+        int reported = 0, estimated = 0, noneTok = 0;
+        for (CopilotRequest r : requests) {
+            switch (r.tokenSource() == null ? CopilotRequest.TokenSource.NONE : r.tokenSource()) {
+                case REPORTED -> reported++;
+                case ESTIMATED -> estimated++;
+                case NONE -> noneTok++;
+            }
+        }
+
         return new Report(
                 count, totalIn, totalOut,
                 (double) totalIn / count,
                 (double) totalOut / count,
                 maxIn, maxOut, largest, requests, hourly, daily,
                 firstMs, lastMs,
-                modelDist, providerDist, avgLatency, latencyCount);
+                modelDist, providerDist, avgLatency, latencyCount,
+                reported, estimated, noneTok);
     }
 }

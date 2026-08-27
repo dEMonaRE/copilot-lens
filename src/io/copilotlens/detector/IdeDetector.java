@@ -29,10 +29,22 @@ public class IdeDetector {
         return findLatestMatching(pattern);
     }
 
+    public Optional<Path> findCursorLog() {
+        String pattern = config.get("log.cursor");
+        return findLatestMatching(pattern);
+    }
+
+    public Optional<Path> findWindsurfLog() {
+        String pattern = config.get("log.windsurf");
+        return findLatestMatching(pattern);
+    }
+
     public Optional<Path> findAnyLog() {
         Optional<Path> idea = findIntelliJLog();
         Optional<Path> vscode = findVsCodeLog();
-        return Stream.of(idea, vscode)
+        Optional<Path> cursor = findCursorLog();
+        Optional<Path> windsurf = findWindsurfLog();
+        return Stream.of(idea, vscode, cursor, windsurf)
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .max(Comparator.comparingLong(p -> p.toFile().lastModified()));
@@ -173,6 +185,26 @@ public class IdeDetector {
                 return stream
                         .filter(p -> p.getFileName().toString().equals("idea.log"))
                         .filter(p -> p.toString().contains("log"))
+                        .max(Comparator.comparingLong(p -> p.toFile().lastModified()));
+            } catch (Exception e) { return Optional.empty(); }
+        }
+        if (pattern.contains("Cursor/logs")) {
+            Path dir = Paths.get(home, "AppData", "Roaming", "Cursor", "logs");
+            if (!Files.isDirectory(dir)) return Optional.empty();
+            try (Stream<Path> stream = Files.walk(dir)) {
+                return stream
+                        .filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().startsWith("output_logging"))
+                        .max(Comparator.comparingLong(p -> p.toFile().lastModified()));
+            } catch (Exception e) { return Optional.empty(); }
+        }
+        if (pattern.contains("Windsurf/logs")) {
+            Path dir = Paths.get(home, "AppData", "Roaming", "Windsurf", "logs");
+            if (!Files.isDirectory(dir)) return Optional.empty();
+            try (Stream<Path> stream = Files.walk(dir)) {
+                return stream
+                        .filter(Files::isRegularFile)
+                        .filter(p -> p.getFileName().toString().startsWith("output_logging"))
                         .max(Comparator.comparingLong(p -> p.toFile().lastModified()));
             } catch (Exception e) { return Optional.empty(); }
         }

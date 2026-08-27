@@ -26,7 +26,10 @@ public class JsonReporter {
         sb.append("    \"totalOutputTokens\": ").append(report.totalOutputTokens()).append(",\n");
         sb.append("    \"avgInputTokens\": ").append((int) report.avgInputTokens()).append(",\n");
         sb.append("    \"maxInputTokens\": ").append(report.maxInputTokens()).append(",\n");
-        sb.append("    \"maxOutputTokens\": ").append(report.maxOutputTokens()).append("\n");
+        sb.append("    \"maxOutputTokens\": ").append(report.maxOutputTokens()).append(",\n");
+        sb.append("    \"reportedRequestCount\": ").append(report.reportedRequestCount()).append(",\n");
+        sb.append("    \"estimatedRequestCount\": ").append(report.estimatedRequestCount()).append(",\n");
+        sb.append("    \"noneTokenRequestCount\": ").append(report.noneTokenRequestCount()).append("\n");
         sb.append("  },\n");
         sb.append("  \"requests\": [\n");
 
@@ -40,7 +43,11 @@ public class JsonReporter {
             sb.append("      \"outputTokens\": ").append(r.outputTokens()).append(",\n");
             sb.append("      \"messageCount\": ").append(r.messageCount()).append(",\n");
             sb.append("      \"summary\": ").append(jsonString(r.summary())).append(",\n");
-            sb.append("      \"workspaceHint\": ").append(jsonString(r.workspaceHint())).append("\n");
+            sb.append("      \"workspaceHint\": ").append(jsonString(r.workspaceHint())).append(",\n");
+            sb.append("      \"model\": ").append(jsonString(r.model())).append(",\n");
+            sb.append("      \"provider\": ").append(jsonString(r.provider())).append(",\n");
+            sb.append("      \"latencyMs\": ").append(r.latencyMs() == null ? "null" : r.latencyMs().toString()).append(",\n");
+            sb.append("      \"tokenSource\": \"").append(r.tokenSource() == null ? "NONE" : r.tokenSource().name()).append("\"\n");
             sb.append("    }").append(i < requests.size() - 1 ? "," : "").append("\n");
         }
         sb.append("  ]\n");
