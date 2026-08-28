@@ -1,6 +1,6 @@
 # copilot-lens
 
-GitHub Copilot token & premium usage analyzer for VSCode and IntelliJ IDEA.
+GitHub Copilot token & premium usage analyzer for VSCode, IntelliJ IDEA, Cursor, and Windsurf.
 
 RTK-style CLI: **read IDE logs, count tokens locally, show what you're spending your premium requests on.** No cloud calls, no AI service — pure local log parsing with BPE token counting.
 
@@ -52,7 +52,7 @@ See [INSTALL.md](docs/INSTALL.md) for full setup, [USAGE.md](docs/USAGE.md) for 
 
 ## IDE Auto-Detection
 
-By default, copilot-lens finds whichever IDE log was modified most recently. No `--ide` flag needed. Force one with `--ide=vscode` or `--ide=idea`.
+By default, copilot-lens finds whichever IDE log was modified most recently. No `--ide` flag needed. Force one with `--ide=vscode`, `--ide=idea`, `--ide=cursor`, or `--ide=windsurf`.
 
 ## Configuration
 
@@ -61,6 +61,8 @@ Project-level config at `./config.properties` (created by `init` in the current 
 ```properties
 log.vscode=${APPDATA}/Code/logs/**/output_logging*.log
 log.idea=${LOCALAPPDATA}/JetBrains/**/log/idea.log
+log.cursor=${APPDATA}/Cursor/logs/**/output_logging*.log
+log.windsurf=${APPDATA}/Windsurf/logs/**/output_logging*.log
 cache.enabled=true
 state.enabled=true
 ```
@@ -89,6 +91,7 @@ copilot-lens/
 │   │   ├── CopilotRequest.java     Domain model
 │   │   ├── LogParser.java          Interface
 │   │   ├── VsCodeParser.java       JSON log format
+│   │   ├── VsCodeForkParser.java   Cursor / Windsurf (VSCode fork)
 │   │   └── IntelliJParser.java     Plain-text log format
 │   ├── analyzer/
 │   │   ├── TokenCounter.java       BPE token counting (jtokkit)
