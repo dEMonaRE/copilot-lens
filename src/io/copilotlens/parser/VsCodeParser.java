@@ -41,10 +41,14 @@ public class VsCodeParser implements LogParser {
     private static final Pattern BODY_HAS_CONTENT = Pattern.compile("\"content\"\\s*:");
     private static final Pattern BODY_HAS_MESSAGES = Pattern.compile("\"messages\"\\s*:\\s*\\[");
 
-    /** Format 2 body look-ahead: kaç satır ileriye bakılır (Format 1 ile aynı pencere). */
-    private static final int LOOK_AHEAD_LIMIT = 8;
+    /** Format 2 body look-ahead: ileri yönde kaç satır taranır. */
+    private static final int LOOK_AHEAD_LIMIT = 64;
+    /** Body bulunamazsa geriye doğru kaç satır daha taranır. */
+    private static final int LOOK_BACK_LIMIT = 32;
     /** Body aday kabulü için satır başına maksimum uzunluk. */
     private static final int MAX_BODY_LINE = 8 * 1024;
+    /** Birleştirilen body'nin toplam maksimum uzunluğu (büyük dump'ları kırpar). */
+    private static final int MAX_BODY_TOTAL = 64 * 1024;
 
     // fetchCompletions: "...Request <uuid> at <https://...> finished with <status> after <float>ms"
     private static final Pattern FETCH_COMPLETIONS = Pattern.compile(
@@ -129,15 +133,27 @@ public class VsCodeParser implements LogParser {
                 String summary = url;
 
                 // Body look-ahead: etraf satırlarda JSON body varsa BPE ile token say
-                String body = lookAheadForBody(lines, i + 1);
+                String body = lookAroundForBody(lines, i);
                 if (body != null) {
-                    int input = counter.count(body);
+                    // Model-aware BPE sayımı (o200k_base gpt-4o için, cl100k_base geri kalanı)
+                    int input = TokenCounter.forModel(model).count(body);
                     result.add(CopilotRequest.ofEstimated(ts, ideTag,
                             url, input, 0, 1, summary, null,
                             model, null, latency));
                 } else {
-                    result.add(CopilotRequest.proxy(ts, ideTag,
-                            url, model, null, latency, summary));
+                    // Body bulunamadı: heuristic fallback — URL/summary metninden
+                    // karakter tabanlı tahmin yap. Tam sıfır yerine "0" değil
+                    // "~30 tok" gibi bir gösterge değer verir.
+                    String heuristicSrc = url != null ? url : "";
+                    int heurIn = TokenCounter.estimateFromChars(heuristicSrc);
+                    if (heurIn > 0) {
+                        result.add(CopilotRequest.ofEstimatedHeuristic(ts, ideTag,
+                                url, heurIn, 0, 1, summary, null,
+                                model, null, latency));
+                    } else {
+                        result.add(CopilotRequest.proxy(ts, ideTag,
+                                url, model, null, latency, summary));
+                    }
                 }
             }
 
@@ -165,10 +181,21 @@ public class VsCodeParser implements LogParser {
                     }
                 }
 
-                result.add(CopilotRequest.proxy(ts, ideTag,
-                        "/v1/engines/" + model + "/completions",
-                        model, provider, latency,
-                        "ccreq success (" + model + ", " + provider + ")"));
+                // ccreq success tek başına geldi (fetchCompletions'sız): summary'den
+                // heuristic ile input tahmini yap ki 0 gözükmesin.
+                String heurSrc = "ccreq success (" + model + ", " + provider + ")";
+                int heurIn = TokenCounter.estimateFromChars(heurSrc);
+                if (heurIn > 0) {
+                    result.add(CopilotRequest.ofEstimatedHeuristic(ts, ideTag,
+                            "/v1/engines/" + model + "/completions",
+                            heurIn, 0, 1, heurSrc, null,
+                            model, provider, latency));
+                } else {
+                    result.add(CopilotRequest.proxy(ts, ideTag,
+                            "/v1/engines/" + model + "/completions",
+                            model, provider, latency,
+                            "ccreq success (" + model + ", " + provider + ")"));
+                }
             }
         }
 
@@ -222,57 +249,95 @@ public class VsCodeParser implements LogParser {
     }
 
     /**
-     * Format 2 ([fetchCompletions]) hattı için, başlangıç indeksinden itibaren
-     * en fazla {@link #LOOK_AHEAD_LIMIT} satır içinde JSON request body arar.
-     * Bulursa BPE-count edilecek şekilde tek string olarak birleştirir;
-     * bulamazsa null döner.
+     * Format 2 ([fetchCompletions]) hattı için, {@code anchorIdx} civarında
+     * (geriye doğru {@link #LOOK_BACK_LIMIT} satır + ileriye doğru
+     * {@link #LOOK_AHEAD_LIMIT} satır) JSON request body arar. Bulursa
+     * BPE-count edilecek şekilde tek string olarak birleştirir; bulamazsa null.
+     *
+     * <p>Yeni VSCode log formatında body bazen fetchCompletions satırından
+     * <em>önce</em>, bazen <em>sonra</em> gelir; ayrıca iki request arasında
+     * 30-80 satır gürültü olabilir. Bu nedenle hem ileri hem geri tarıyoruz.
      *
      * Hevistik:
      *  - Satır hem "role" hem "content" veya "messages" içermeli
-     *  - Satır uzunluğu MAX_BODY_LINE'ı aşmamalı
+     *  - Satır uzunluğu {@link #MAX_BODY_LINE}'ı aşmamalı
      *  - Yeni bir timestamped log satırına ulaşırsak bakmayı bırakırız
      *  - İlk body satırından sonra JSON bracket derinliğini izleyerek
      *    body kapanana kadar toplarız (body birden fazla satıra bölünebilir)
+     *  - Toplam uzunluk {@link #MAX_BODY_TOTAL} ile sınırlıdır
      */
-    private String lookAheadForBody(List<String> lines, int startIdx) {
-        int endIdx = Math.min(startIdx + LOOK_AHEAD_LIMIT, lines.size());
-        for (int k = startIdx; k < endIdx; k++) {
-            String cand = lines.get(k);
-            if (cand == null || cand.isEmpty()) continue;
-            // Yeni timestamped log satırı: bu artık farklı bir request
-            if (TIMESTAMP_SPACE.matcher(cand).find() || TIMESTAMP_ISO.matcher(cand).find()) {
-                return null;
-            }
-            // Yanlış pozitif filtreleri — body adayının tüm sinyalleri taşıması şart
-            if (cand.length() > MAX_BODY_LINE) continue;
-            if (!BODY_HAS_ROLE.matcher(cand).find()) continue;
-            if (!BODY_HAS_CONTENT.matcher(cand).find() && !BODY_HAS_MESSAGES.matcher(cand).find()) {
-                continue;
-            }
+    private String lookAroundForBody(List<String> lines, int anchorIdx) {
+        // İleri yönde ara (fetchCompletions sonrası body)
+        String body = scanForBody(lines, anchorIdx + 1,
+                Math.min(anchorIdx + 1 + LOOK_AHEAD_LIMIT, lines.size()),
+                false);
+        if (body != null) return body;
 
-            // Body buradan başlıyor: JSON bracket derinliğini izleyerek topla
-            StringBuilder sb = new StringBuilder(cand.trim());
-            int depth = 0;
-            for (int p = 0; p < cand.length(); p++) {
-                char ch = cand.charAt(p);
-                if (ch == '{') depth++;
-                else if (ch == '}') depth--;
+        // Geri yönde ara (fetchCompletions öncesi body)
+        int backStart = Math.max(0, anchorIdx - LOOK_BACK_LIMIT);
+        body = scanForBody(lines, backStart, anchorIdx, true);
+        return body;
+    }
+
+    /**
+     * {@code [startIdx, endIdx)} aralığında JSON body arar. {@code reverse=true}
+     * ise sondan başa doğru arar (geri taramada en yakın body'yi tercih etmek için).
+     */
+    private String scanForBody(List<String> lines, int startIdx, int endIdx, boolean reverse) {
+        if (reverse) {
+            for (int k = endIdx - 1; k >= startIdx; k--) {
+                String body = tryCollectBody(lines, k, endIdx, startIdx);
+                if (body != null) return body;
             }
-            int j = k + 1;
-            while (depth > 0 && j < endIdx) {
-                String next = lines.get(j);
-                if (next != null && !next.isEmpty()) {
-                    sb.append(' ').append(next.trim());
-                    for (int p = 0; p < next.length(); p++) {
-                        char ch = next.charAt(p);
-                        if (ch == '{') depth++;
-                        else if (ch == '}') depth--;
-                    }
-                }
-                j++;
+        } else {
+            for (int k = startIdx; k < endIdx; k++) {
+                String body = tryCollectBody(lines, k, endIdx, startIdx);
+                if (body != null) return body;
             }
-            return sb.toString();
         }
         return null;
+    }
+
+    /**
+     * {@code lines[k]} aday body satırı mı diye bakar; öyleyse JSON bracket
+     * derinliğini izleyerek tam body'yi döndürür. Değilse null.
+     */
+    private String tryCollectBody(List<String> lines, int k, int endIdx, int startIdx) {
+        String cand = lines.get(k);
+        if (cand == null || cand.isEmpty()) return null;
+        // Yeni timestamped log satırı: bu artık farklı bir request
+        if (TIMESTAMP_SPACE.matcher(cand).find() || TIMESTAMP_ISO.matcher(cand).find()) {
+            return null;
+        }
+        // Yanlış pozitif filtreleri — body adayının tüm sinyalleri taşıması şart
+        if (cand.length() > MAX_BODY_LINE) return null;
+        if (!BODY_HAS_ROLE.matcher(cand).find()) return null;
+        if (!BODY_HAS_CONTENT.matcher(cand).find() && !BODY_HAS_MESSAGES.matcher(cand).find()) {
+            return null;
+        }
+
+        // Body buradan başlıyor: JSON bracket derinliğini izleyerek topla
+        StringBuilder sb = new StringBuilder(cand.trim());
+        int depth = 0;
+        for (int p = 0; p < cand.length(); p++) {
+            char ch = cand.charAt(p);
+            if (ch == '{') depth++;
+            else if (ch == '}') depth--;
+        }
+        int j = k + 1;
+        while (depth > 0 && j < endIdx && sb.length() < MAX_BODY_TOTAL) {
+            String next = lines.get(j);
+            if (next != null && !next.isEmpty()) {
+                sb.append(' ').append(next.trim());
+                for (int p = 0; p < next.length(); p++) {
+                    char ch = next.charAt(p);
+                    if (ch == '{') depth++;
+                    else if (ch == '}') depth--;
+                }
+            }
+            j++;
+        }
+        if (depth > 0) return null;  // tam kapanmamış body, güvenilmez
+        return sb.toString();
     }
 }

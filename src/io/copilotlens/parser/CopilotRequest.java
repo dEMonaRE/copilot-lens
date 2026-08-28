@@ -34,10 +34,14 @@ public record CopilotRequest(
     /**
      * Token sayısının nereden geldiğini belirtir.
      *  - REPORTED: log'daki "usage"/JSON-RPC "data" alanından
-     *  - ESTIMATED: BPE (jtokkit) ile yerel hesaplama
-     *  - NONE: token bilgisi yok (eski Format 2 davranışı)
+     *  - ESTIMATED: BPE (jtokkit) ile yerel hesaplama — request body
+     *    look-ahead ile bulundu, model-aware encoding seçildi
+     *  - ESTIMATED_HEURISTIC: body bulunamadı, summary/endpoint metni
+     *    üzerinden karakter tabanlı heuristic kullanıldı (düşük güven)
+     *  - NONE: token bilgisi yok (log kaynağında token yok, tahmin de
+     *    yapılamadı — yeni VSCode log formatında output hep buraya düşer)
      */
-    public enum TokenSource { REPORTED, ESTIMATED, NONE }
+    public enum TokenSource { REPORTED, ESTIMATED, ESTIMATED_HEURISTIC, NONE }
 
     public int totalTokens() {
         return inputTokens + outputTokens;
@@ -80,6 +84,20 @@ public record CopilotRequest(
                                               Integer latencyMs) {
         return new CopilotRequest(ts, ide, endpoint, inTok, outTok, msgs,
                 summary, workspace, model, provider, latencyMs, TokenSource.ESTIMATED);
+    }
+
+    /**
+     * Body bulunamadığında summary veya URL'den yapılan heuristic tahmin.
+     * Düşük güvenilirlik: kod/prose ayrımı yapılamadığı için sapma yüksek.
+     */
+    public static CopilotRequest ofEstimatedHeuristic(LocalDateTime ts, Ide ide, String endpoint,
+                                                       int inTok, int outTok, int msgs,
+                                                       String summary, String workspace,
+                                                       String model, String provider,
+                                                       Integer latencyMs) {
+        return new CopilotRequest(ts, ide, endpoint, inTok, outTok, msgs,
+                summary, workspace, model, provider, latencyMs,
+                TokenSource.ESTIMATED_HEURISTIC);
     }
 
     /**

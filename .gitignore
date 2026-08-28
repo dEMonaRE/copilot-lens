@@ -1,5 +1,7 @@
 # Build outputs
 out/
+# Test bytecode (sources live under test/, never commit compiled .class)
+test/**/*.class
 
 # Generated reports (don't commit user-specific analyses)
 copilot-lens-report.html

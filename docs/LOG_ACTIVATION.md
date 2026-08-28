@@ -36,7 +36,22 @@ Get-ChildItem "$env:APPDATA\Code\logs\*\*\output_logging*.log" | Sort-Object Las
 
 If the result is empty, verbose log is still off (or you haven't triggered Copilot since enabling it).
 
-**Note on token counts**: VSCode Copilot Chat 0.60+ no longer logs `prompt_tokens` / `completion_tokens`. copilot-lens handles this by look-ahead scanning surrounding log lines for the request body and running BPE counting locally. Token totals include a `Token source:` footer note showing how many records were `reported` (from log usage lines) vs `estimated` (from local BPE) vs `unknown` (tokenless).
+**Note on token counts**: VSCode Copilot Chat 0.60+ no longer logs `prompt_tokens` / `completion_tokens`. copilot-lens handles this by look-ahead scanning surrounding log lines for the request body and running BPE counting locally. Token totals include a `Token source:` footer note showing how many records were `reported` (from log usage lines), `BPE-estimated` (local jtokkit count of recovered body), `heuristic` (char-based estimate when body is unavailable), or `unknown` (tokenless).
+
+### VSCode + Copilot Enterprise (`proxy.business.githubcopilot.com`)
+
+Enterprise hesaplarında log URL'i `proxy.individual.githubcopilot.com`
+yerine `proxy.business.githubcopilot.com` olur. Parser her iki URL'i de
+destekler; beklentiler:
+
+- **Input token'lar** model-aware BPE tahmini olarak hesaplanır
+  (look-ahead ile body bulunursa `ESTIMATED`, bulunamazsa
+  `ESTIMATED_HEURISTIC`).
+- **Output token'lar her zaman 0** kalır — yeni VSCode log formatında
+  response body'si hiç loglanmaz; bu bir bug değil, format kısıtıdır.
+- Raporlarda `(response not logged)` rozeti ile bu durum açıkça işaretlenir.
+- Toplam kullanım için premium request sayısına bakın; bu Copilot
+  Enterprise faturalandırma mantığıyla da uyumludur.
 
 ## IntelliJ IDEA / IDEA Community
 

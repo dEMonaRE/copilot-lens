@@ -148,6 +148,12 @@ public class CliReporter {
                     ideBadge,
                     r.inputTokens());
             c(GREEN, repeat('#', barWidth));
+
+            // Output token rozeti: log formatında response body'si yoksa
+            // "(response not logged)" rozeti göster.
+            if (r.outputTokens() == 0 && r.inputTokens() > 0) {
+                c(DIM, "  (response not logged)");
+            }
             System.out.println();
 
             if (r.summary() != null && !r.summary().isEmpty()) {
@@ -295,17 +301,23 @@ public class CliReporter {
         }
 
         // Token kaynak ayrımı — yalnızca birden fazla kaynak varsa göster
-        int total = r.reportedRequestCount() + r.estimatedRequestCount() + r.noneTokenRequestCount();
-        if (total > 0 && (r.reportedRequestCount() + r.estimatedRequestCount() + r.noneTokenRequestCount()) > 0) {
+        int total = r.reportedRequestCount() + r.estimatedRequestCount()
+                + r.estimatedHeuristicRequestCount() + r.noneTokenRequestCount();
+        if (total > 0) {
             int sources = 0;
             if (r.reportedRequestCount() > 0) sources++;
             if (r.estimatedRequestCount() > 0) sources++;
+            if (r.estimatedHeuristicRequestCount() > 0) sources++;
             if (r.noneTokenRequestCount() > 0) sources++;
             if (sources > 1) {
                 c(GRAY, "  Token source: ");
-                System.out.printf(Locale.ROOT, "%,d reported / %,d estimated / %,d unknown%n",
-                        r.reportedRequestCount(), r.estimatedRequestCount(), r.noneTokenRequestCount());
-                c(GRAY, "    (reported = log usage line; estimated = local BPE; unknown = tokenless)");
+                System.out.printf(Locale.ROOT,
+                        "%,d reported / %,d BPE-estimated / %,d heuristic / %,d unknown%n",
+                        r.reportedRequestCount(), r.estimatedRequestCount(),
+                        r.estimatedHeuristicRequestCount(), r.noneTokenRequestCount());
+                c(GRAY, "    (reported = log usage line; BPE = jtokkit local count;");
+                System.out.println();
+                c(GRAY, "     heuristic = char-based estimate when no body; unknown = tokenless)");
                 System.out.println();
             }
         }

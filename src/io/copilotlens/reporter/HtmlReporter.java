@@ -126,10 +126,17 @@ public class HtmlReporter {
         for (CopilotRequest r : requests) {
             int widthPct = (int) (100.0 * r.inputTokens() / max);
             String badge = ideBadge(r.ide());
+            // Output rozeti: response body'si logda yoksa uyarı rozeti göster
+            String outBadge = "";
+            if (r.outputTokens() == 0 && r.inputTokens() > 0) {
+                outBadge = " <span class='badge' style='background:#cf222e22;color:#cf222e;"
+                        + "@media(prefers-color-scheme:dark){background:#f8514922;color:#f85149}"
+                        + "'>response not logged</span>";
+            }
             sb.append("    <tr>")
               .append("<td>").append(r.timestamp().toLocalTime().format(timeFmt)).append("</td>")
               .append("<td>").append(badge).append("</td>")
-              .append("<td>").append(String.format(Locale.ROOT, "%,d", r.inputTokens())).append("</td>")
+              .append("<td>").append(String.format(Locale.ROOT, "%,d", r.inputTokens())).append(outBadge).append("</td>")
               .append("<td class='summary'>").append(escape(r.summary())).append("</td>")
               .append("<td><div class='bar' style='width:").append(widthPct).append("%'></div></td>")
               .append("</tr>\n");
@@ -150,15 +157,19 @@ public class HtmlReporter {
         int sources = 0;
         if (report.reportedRequestCount() > 0) sources++;
         if (report.estimatedRequestCount() > 0) sources++;
+        if (report.estimatedHeuristicRequestCount() > 0) sources++;
         if (report.noneTokenRequestCount() > 0) sources++;
         if (sources <= 1) return;
         sb.append("    <p class=\"meta\">Token source: ")
           .append(String.format(Locale.ROOT, "%,d reported", report.reportedRequestCount()))
           .append(" / ")
-          .append(String.format(Locale.ROOT, "%,d estimated", report.estimatedRequestCount()))
+          .append(String.format(Locale.ROOT, "%,d BPE-estimated", report.estimatedRequestCount()))
+          .append(" / ")
+          .append(String.format(Locale.ROOT, "%,d heuristic", report.estimatedHeuristicRequestCount()))
           .append(" / ")
           .append(String.format(Locale.ROOT, "%,d unknown", report.noneTokenRequestCount()))
-          .append(" (reported = log usage; estimated = local BPE; unknown = tokenless)</p>\n");
+          .append(" (reported = log usage; BPE = jtokkit local count;")
+          .append(" heuristic = char-based estimate; unknown = tokenless)</p>\n");
     }
 
     /**

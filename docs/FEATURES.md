@@ -230,6 +230,37 @@ This has direct consequences for what `copilot-lens` can extract:
 - **No `prompt_tokens` / `completion_tokens`**: Copilot Chat extension does not log them at any level seen so far.
 - **Model + provider + latency** are the only per-request metrics available.
 
+#### copilot-lens tahmin stratejisi (yeni format)
+
+Yeni VSCode log formatında token sayıları loga düşmediği için
+`copilot-lens` üç katmanlı bir tahmin stratejisi kullanır:
+
+| Kaynak | Token sayımı | Doğruluk | `TokenSource` |
+|---|---|---|---|
+| Log satırındaki body (look-ahead, 64 satır ileri + 32 satır geri) | BPE (jtokkit, model-aware) | **Birebir** (server ile aynı BPE) | `ESTIMATED` |
+| Body bulunamadı, summary/URL metni var | Karakter tabanlı heuristic (code/prose sniffer'lı) | ±10-20% sapma | `ESTIMATED_HEURISTIC` |
+| Hiçbir metin yok (eski Format 2 davranışı) | Sıfır | — | `NONE` |
+
+#### Otomatik encoding seçimi
+
+Model adından BPE ailesi otomatik seçilir (`TokenCounter.forModel`):
+
+| Model ailesi | BPE encoding | Tipik örnekler |
+|---|---|---|
+| gpt-4o, gpt-4.1, o1, o3, o200k | `o200k_base` | `gpt-4o-mini-2024-07-18`, `gpt-41-copilot`, `o1-preview` |
+| gpt-4, gpt-3.5, Claude (proxy), bilinmeyen | `cl100k_base` | `gpt-4`, `gpt-3.5-turbo`, `unknown-model-xyz` |
+
+Bilinmeyen modeller için `cl100k_base` güvenli varsayılan olarak kullanılır
+(Copilot proxy'si geriye dönük uyumluluk için bunu kullanır).
+
+#### Output token limitation
+
+- **Output token her zaman 0** olarak raporlanır. Yeni VSCode log formatında
+  response body'si hiç loglanmaz; server tarafında kalır.
+- Raporlarda `(response not logged)` rozeti ile bu durum açıkça işaretlenir
+  (kullanıcıyı "bug" sanısından kurtarır).
+- Bu bir bug değil, log formatının temel kısıtıdır.
+
 ### Older HTTP format (legacy)
 
 If you ever see raw `POST /v1/chat/completions` lines plus `usage: prompt_tokens=N, completion_tokens=M` in either log (older Copilot extension versions), copilot-lens extracts those correctly. The "no separate output tokens" limitation only applies to the modern JSON-RPC architecture.
