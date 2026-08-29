@@ -12,6 +12,56 @@ RTK-style CLI: **read IDE logs, count tokens locally, show what you're spending 
 - **Works in PowerShell and Git Bash**
 - **One-shot, watch, history, JSON export** modes
 
+## Prerequisites
+
+**JDK 17+** gerekli (21 LTS önerilir — projeyi Eclipse Adoptium Temurin ile derliyoruz). Kurulu değilse veya sürüm eskiyse:
+
+Windows PowerShell — `winget` ile:
+
+```powershell
+winget install --id EclipseAdoptium.Temurin.21.JDK
+```
+
+Windows MSI ile (winget yoksa): <https://adoptium.net/temurin/releases/?version=21> adresinden `Temurin-21-jdk_x64.msi` indirip kurun.
+
+WSL / Ubuntu / Debian — Adoptium APT repo:
+
+```bash
+sudo apt update && sudo apt install -y wget apt-transport-https gnupg
+wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public \
+  | sudo gpg --dearmor -o /usr/share/keyrings/adoptium.gpg
+echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] https://packages.adoptium.net/artifamily/ubuntu $(lsb_release -sc) main" \
+  | sudo tee /etc/apt/sources.list.d/adoptium.list
+sudo apt update && sudo apt install -y temurin-21-jdk
+```
+
+Fedora / RHEL:
+
+```bash
+sudo dnf install -y temurin-21-jdk
+```
+
+macOS (Homebrew):
+
+```bash
+brew install --cask temurin@21
+```
+
+SDKMAN (tüm platformlar için ortak yol):
+
+```bash
+sdk install java 21-tem
+```
+
+Kurulumu doğrulayın:
+
+```bash
+java -version
+# openjdk version "21.x.x" ... görmeli
+```
+
+---
+
 ## Quick Start
 
 ### 1. Projeyi edinin
