@@ -14,13 +14,48 @@ RTK-style CLI: **read IDE logs, count tokens locally, show what you're spending 
 
 ## Quick Start
 
+### 1. Projeyi edinin
+
+**Git ile (önerilen):**
+
+```bash
+# Windows PowerShell veya WSL / Linux / macOS — hepsi aynı
+git clone https://github.com/dEMonaRE/copilot-lens.git
+cd copilot-lens
+```
+
+**Git yoksa (doğrudan ZIP indir):**
+
+Windows PowerShell:
+
+```powershell
+$url = "https://github.com/dEMonaRE/copilot-lens/archive/refs/heads/master.zip"
+Invoke-WebRequest -Uri $url -OutFile "copilot-lens.zip"
+Expand-Archive copilot-lens.zip
+cd copilot-lens-master
+```
+
+WSL / Linux / macOS:
+
+```bash
+curl -L -o copilot-lens.zip https://github.com/dEMonaRE/copilot-lens/archive/refs/heads/master.zip
+unzip copilot-lens.zip
+cd copilot-lens-master
+```
+
+### 2. Derleyin
+
 ```bash
 # Build (downloads jtokkit jar, compiles)
-./build.sh                     # Git Bash
+./build.sh                     # Git Bash / WSL / Linux / macOS
 .\build.ps1                    # PowerShell / cmd (uses current terminal)
+```
 
+### 3. Yapılandırın ve çalıştırın
+
+```bash
 # Initialize config (writes ./config.properties for IDE log paths)
-./copilot-lens.sh init        # Git Bash
+./copilot-lens.sh init        # Git Bash / WSL / Linux / macOS
 .\copilot-lens.ps1 init        # PowerShell
 
 # Add wrapper to PATH (optional)
