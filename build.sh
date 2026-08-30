@@ -18,7 +18,14 @@ JTOKKIT_FINAL="$LIB_DIR/jtokkit-${JTOKKIT_VERSION}.jar"
 # Gecici indirme adlari: ".jar" icermez, Windows bunlari tetiklemez
 JTOKKIT_TMP="$LIB_DIR/.jtokkit-${JTOKKIT_VERSION}.download"
 
+# sqlite-jdbc: VSCode state.vscdb okumak icin (P0, opt-in via chatsession.enabled).
+# Pure Java jar, native libs icermiyor (org.xerial paketi icinde).
+SQLITE_JDBC_VERSION="3.46.1.0"
+SQLITE_JDBC_FINAL="$LIB_DIR/sqlite-jdbc-${SQLITE_JDBC_VERSION}.jar"
+SQLITE_JDBC_TMP="$LIB_DIR/.sqlite-jdbc-${SQLITE_JDBC_VERSION}.download"
+
 MAVEN_REPO="https://repo1.maven.org/maven2/com/knuddels/jtokkit"
+SQLITE_REPO="https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc"
 
 echo "==> JDK kontrol"
 if [[ -n "${JAVA_HOME:-}" ]] && [[ -x "$JAVA_HOME/bin/javac" ]]; then
@@ -72,8 +79,39 @@ else
     echo "OK jtokkit indirildi ($SIZE bytes)"
 fi
 
+# sqlite-jdbc: optional but downloaded unconditionally so users can flip
+# chatsession.enabled=true without a second build pass.
+if [[ -f "$SQLITE_JDBC_FINAL" ]]; then
+    echo "OK sqlite-jdbc zaten mevcut, atlaniyor: $SQLITE_JDBC_FINAL"
+else
+    echo "==> sqlite-jdbc-${SQLITE_JDBC_VERSION} indiriliyor (.tmp uzantisi ile)"
+    if ! curl -fL --retry 3 --connect-timeout 10 --silent --show-error \
+        -o "$SQLITE_JDBC_TMP" \
+        "${SQLITE_REPO}/${SQLITE_JDBC_VERSION}/sqlite-jdbc-${SQLITE_JDBC_VERSION}.jar"; then
+        echo "X sqlite-jdbc indirilemedi. chatsession.enabled=true kullanmayacaksaniz sorun degil." >&2
+        rm -f "$SQLITE_JDBC_TMP"
+        # Non-fatal: feature is opt-in. Continue building with just jtokkit on classpath.
+    else
+        mv "$SQLITE_JDBC_TMP" "$SQLITE_JDBC_FINAL"
+        SIZE=$(stat -c %s "$SQLITE_JDBC_FINAL" 2>/dev/null || stat -f %z "$SQLITE_JDBC_FINAL" 2>/dev/null || echo 0)
+        if [[ "$SIZE" -lt 1000000 ]]; then
+            echo "X sqlite-jdbc dosyasi cok kucuk ($SIZE bytes). Muhtemelen hatali." >&2
+            rm -f "$SQLITE_JDBC_FINAL"
+        else
+            echo "OK sqlite-jdbc indirildi ($SIZE bytes)"
+        fi
+    fi
+fi
+
 echo "==> Kaynak kodlar derleniyor"
 mkdir -p "$OUT_DIR"
+
+# Classpath: jtokkit her zaman, sqlite-jdbc varsa (yoksa P0 subcommand'lari
+# calismaz; geri kalani compile edilir).
+CP="$JTOKKIT_FINAL"
+if [[ -f "$SQLITE_JDBC_FINAL" ]]; then
+    CP="$CP:$SQLITE_JDBC_FINAL"
+fi
 
 # Use bash's globstar instead of `find` — avoids Windows' find.exe
 # shadowing the GNU one when System32 appears earlier in PATH.
@@ -81,7 +119,7 @@ shopt -s globstar nullglob
 SOURCES=("$SRC_DIR"/**/*.java)
 
 "$JAVAC" -d "$OUT_DIR" \
-         -cp "$JTOKKIT_FINAL" \
+         -cp "$CP" \
          --release "$RELEASE_TARGET" \
          -encoding UTF-8 \
          -Xlint:all \
