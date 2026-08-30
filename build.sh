@@ -24,8 +24,15 @@ SQLITE_JDBC_VERSION="3.46.1.0"
 SQLITE_JDBC_FINAL="$LIB_DIR/sqlite-jdbc-${SQLITE_JDBC_VERSION}.jar"
 SQLITE_JDBC_TMP="$LIB_DIR/.sqlite-jdbc-${SQLITE_JDBC_VERSION}.download"
 
+# gson: VSCode chat session JSON'larini okumak icin (P0). JSON ic ice
+# array/object icerdigi icin projedeki duz regex JSON parser'i yetmiyor.
+GSON_VERSION="2.11.0"
+GSON_FINAL="$LIB_DIR/gson-${GSON_VERSION}.jar"
+GSON_TMP="$LIB_DIR/.gson-${GSON_VERSION}.download"
+
 MAVEN_REPO="https://repo1.maven.org/maven2/com/knuddels/jtokkit"
 SQLITE_REPO="https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc"
+GSON_REPO="https://repo1.maven.org/maven2/com/google/code/gson/gson"
 
 echo "==> JDK kontrol"
 if [[ -n "${JAVA_HOME:-}" ]] && [[ -x "$JAVA_HOME/bin/javac" ]]; then
@@ -103,15 +110,36 @@ else
     fi
 fi
 
+# gson: VSCode chat session JSON parsing. Like sqlite-jdbc, downloaded
+# unconditionally so feature toggling is just a config flag flip.
+if [[ -f "$GSON_FINAL" ]]; then
+    echo "OK gson zaten mevcut, atlaniyor: $GSON_FINAL"
+else
+    echo "==> gson-${GSON_VERSION} indiriliyor (.tmp uzantisi ile)"
+    if ! curl -fL --retry 3 --connect-timeout 10 --silent --show-error \
+        -o "$GSON_TMP" \
+        "${GSON_REPO}/${GSON_VERSION}/gson-${GSON_VERSION}.jar"; then
+        echo "X gson indirilemedi. chatsession.enabled=true kullanmayacaksaniz sorun degil." >&2
+        rm -f "$GSON_TMP"
+    else
+        mv "$GSON_TMP" "$GSON_FINAL"
+        SIZE=$(stat -c %s "$GSON_FINAL" 2>/dev/null || stat -f %z "$GSON_FINAL" 2>/dev/null || echo 0)
+        if [[ "$SIZE" -lt 100000 ]]; then
+            echo "X gson dosyasi cok kucuk ($SIZE bytes). Muhtemelen hatali." >&2
+            rm -f "$GSON_FINAL"
+        else
+            echo "OK gson indirildi ($SIZE bytes)"
+        fi
+    fi
+fi
+
 echo "==> Kaynak kodlar derleniyor"
 mkdir -p "$OUT_DIR"
 
-# Classpath: jtokkit her zaman, sqlite-jdbc varsa (yoksa P0 subcommand'lari
-# calismaz; geri kalani compile edilir).
+# Classpath: jtokkit her zaman; sqlite-jdbc ve gson P0 icin.
 CP="$JTOKKIT_FINAL"
-if [[ -f "$SQLITE_JDBC_FINAL" ]]; then
-    CP="$CP:$SQLITE_JDBC_FINAL"
-fi
+[[ -f "$SQLITE_JDBC_FINAL" ]] && CP="$CP:$SQLITE_JDBC_FINAL"
+[[ -f "$GSON_FINAL" ]] && CP="$CP:$GSON_FINAL"
 
 # Use bash's globstar instead of `find` — avoids Windows' find.exe
 # shadowing the GNU one when System32 appears earlier in PATH.
