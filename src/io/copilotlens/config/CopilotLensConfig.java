@@ -15,13 +15,15 @@ import java.util.Properties;
  *   4. Hard-coded defaults
  *
  * Config keys:
- *   log.vscode     VSCode output_logging glob
- *   log.idea       IntelliJ idea.log glob
- *   log.cursor     Cursor output_logging glob (VSCode-fork)
- *   log.windsurf   Windsurf output_logging glob (Codeium VSCode-fork)
- *   state.dir      Where to keep incremental state + cache
- *   state.enabled  Track file byte offsets (delta scans)
- *   cache.enabled  Cache parsed requests across runs
+ *   log.vscode            VSCode output_logging glob
+ *   log.idea              IntelliJ idea.log glob
+ *   log.cursor            Cursor output_logging glob (VSCode-fork)
+ *   log.windsurf          Windsurf output_logging glob (Codeium VSCode-fork)
+ *   state.dir             Where to keep incremental state + cache
+ *   state.enabled         Track file byte offsets (delta scans)
+ *   cache.enabled         Cache parsed requests across runs
+ *   chatsession.enabled   Read VSCode chat sessions from state.vscdb (experimental)
+ *   chatsession.maxBytes  Skip session JSON files larger than this many bytes
  */
 public class CopilotLensConfig {
 
@@ -49,6 +51,17 @@ public class CopilotLensConfig {
         props.setProperty("state.dir", DEFAULT_HOME.toString());
         props.setProperty("state.enabled", "true");
         props.setProperty("cache.enabled", "true");
+        // VSCode chat-session SQLite/JSON reader is opt-in.
+        // Default OFF so existing users see no behaviour change.
+        // When OFF we keep the existing log-file-only pipeline.
+        // When ON we open per-workspace state.vscdb files (read-only) and
+        // walk <wsId>/chatSessions/<sessionId>.{json,jsonl} for prompt text,
+        // tool calls, and per-turn model/latency that the log file does not
+        // carry. See docs/FEATURES_PLAN.md for details.
+        props.setProperty("chatsession.enabled", "false");
+        // 200 MB cap matches pavanvamsi3/copilot-lens's MAX_FILE_SIZE; tunable
+        // down for low-memory machines.
+        props.setProperty("chatsession.maxBytes", "209715200");
 
         // Layer 3: user-level config (~/.copilot-lens/config.properties)
         if (Files.exists(USER_CONFIG)) {
@@ -157,15 +170,31 @@ public class CopilotLensConfig {
             # (do NOT set them yourself -- read them from your shell if you need the value).
 
             # VSCode Copilot log (Windows default)
-            log.vscode=${APPDATA}/Code/logs/**/output_logging*.log
+            # Two patterns are tried (comma-separated) both are walked, the most
+            # recently modified file wins.
+            #
+            # Pattern 1 (legacy, optional): %APPDATA%\\Code\\logs\\<...>\\exthost\\output_logging_*.log
+            #   Appears only AFTER you enable verbose log via F1 -> Set Log Level.
+            #   Older Copilot extension versions used this convention.
+            #
+            # Pattern 2 (current, default): %APPDATA%\\Code\\logs\\<...>\\exthost\\GitHub.copilot-chat\\GitHub Copilot Chat.log
+            #   Always present once GitHub Copilot Chat extension is installed.
+            #   New format (extension >= 0.60) log includes [fetchCompletions] URLs,
+            #   ccreq model/provider/latency, but no token counts.
+            log.vscode=${APPDATA}/Code/logs/**/output_logging*.log,${APPDATA}/Code/logs/**/GitHub.copilot-chat/GitHub Copilot Chat.log
 
             # IntelliJ IDEA Copilot log (Windows default)
+            # Resolves to: %LOCALAPPDATA%\\JetBrains\\<variant><version>\\log\\idea.log
+            # This glob matches every installed JetBrains product (IntelliJ IDEA,
+            # IDEA Community, AppCode, etc.). Auto-detect picks the most-recently
+            # modified file, so multiple JetBrains installs is fine.
             log.idea=${LOCALAPPDATA}/JetBrains/**/log/idea.log
 
-            # Cursor (VSCode fork) Copilot log (Windows default)
+            # Cursor (VSCode-fork) Copilot log (Windows default)
+            # Same extension-host log convention as VSCode; only the appdata directory differs.
             log.cursor=${APPDATA}/Cursor/logs/**/output_logging*.log
 
-            # Windsurf (Codeium VSCode fork) log (Windows default)
+            # Windsurf (Codeium VSCode-fork) Copilot log (Windows default)
             # Cascade AI'in kendi ic logu (Lifeguard.log) serbest formatli,
             # bu yuzden parse edilmez — sadece extension-host logu kullanilir.
             log.windsurf=${APPDATA}/Windsurf/logs/**/output_logging*.log
@@ -180,6 +209,17 @@ public class CopilotLensConfig {
 
             # Cache parsed requests across runs (avoids full re-parse)
             cache.enabled=true
+
+            # --- Experimental: VSCode chat-session reader ---
+            # When enabled, copilot-lens reads per-workspace state.vscdb SQLite
+            # files plus <wsId>\\chatSessions\\<sessionId>.{json,jsonl} to capture
+            # the real prompt text, assistant response, and tool calls for each
+            # VSCode chat turn. The log file alone only carries model/latency.
+            #
+            # Requires sqlite-jdbc-X.Y.Z.jar in lib/ (downloaded by build.sh).
+            # Default OFF so existing runs are unaffected. See docs/FEATURES_PLAN.md.
+            chatsession.enabled=false
+            chatsession.maxBytes=209715200
             """;
         Files.writeString(Paths.get("config.properties"), content);
     }
