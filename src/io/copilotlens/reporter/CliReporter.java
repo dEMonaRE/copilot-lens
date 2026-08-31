@@ -104,7 +104,9 @@ public class CliReporter {
         System.out.println();
 
         if (r.requestCount() > 0) {
-            long durationMs = r.lastTimestampMs() - r.firstTimestampMs();
+            // P1.4: use gap-capped active duration so paused sessions aren't
+            // counted as hours of activity.
+            long durationMs = r.activeDurationMs();
             if (durationMs > 0) {
                 double perHour = r.requestCount() / (durationMs / 3_600_000.0);
                 c(BOLD, "Tempo: ");

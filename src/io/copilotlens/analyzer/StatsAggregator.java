@@ -29,6 +29,9 @@ public class StatsAggregator {
             Map<LocalDate, Integer> dailyDistribution,
             long firstTimestampMs,
             long lastTimestampMs,
+            // P1.4: gap-capped active duration (ms). Sum of inter-event gaps,
+            // each capped at 5 min so paused sessions aren't inflated.
+            long activeDurationMs,
             // Yeni mimaride token yok, aktivite proxy metrikleri:
             Map<String, Integer> modelDistribution,
             Map<String, Integer> providerDistribution,
@@ -41,10 +44,13 @@ public class StatsAggregator {
             int noneTokenRequestCount
     ) {}
 
+    /** P1.4: cap any single inter-event gap at this many milliseconds. */
+    private static final long MAX_GAP_MS = 5L * 60L * 1000L;
+
     public Report aggregate(List<CopilotRequest> requests) {
         if (requests.isEmpty()) {
             return new Report(0, 0, 0, 0, 0, 0, 0, List.of(), List.of(),
-                    Map.of(), Map.of(), 0, 0,
+                    Map.of(), Map.of(), 0, 0, 0,
                     Map.of(), Map.of(), 0, 0,
                     0, 0, 0, 0);
         }
@@ -74,6 +80,25 @@ public class StatsAggregator {
                 .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
         long lastMs = requests.get(requests.size() - 1).timestamp()
                 .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+
+        // P1.4: gap-capped active duration. Sort timestamps ascending, sum
+        // each inter-event delta, capping any single gap at MAX_GAP_MS so
+        // a paused session isn't counted as hours of activity.
+        long activeDurationMs = 0;
+        if (requests.size() >= 2) {
+            long[] ts = new long[requests.size()];
+            for (int i = 0; i < requests.size(); i++) {
+                ts[i] = requests.get(i).timestamp()
+                        .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+            }
+            java.util.Arrays.sort(ts);
+            for (int i = 1; i < ts.length; i++) {
+                long gap = ts[i] - ts[i - 1];
+                if (gap < 0) gap = 0;
+                if (gap > MAX_GAP_MS) gap = MAX_GAP_MS;
+                activeDurationMs += gap;
+            }
+        }
 
         // Aktivite proxy metrikleri (yeni mimari için)
         Map<String, Integer> modelDist = new TreeMap<>();
@@ -110,7 +135,7 @@ public class StatsAggregator {
                 (double) totalIn / count,
                 (double) totalOut / count,
                 maxIn, maxOut, largest, requests, hourly, daily,
-                firstMs, lastMs,
+                firstMs, lastMs, activeDurationMs,
                 modelDist, providerDist, avgLatency, latencyCount,
                 reported, estimated, heuristic, noneTok);
     }
