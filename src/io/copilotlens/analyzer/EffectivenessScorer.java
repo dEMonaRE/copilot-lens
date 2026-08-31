@@ -157,7 +157,7 @@ public class EffectivenessScorer {
                     "no MCP servers configured (neutral)");
         }
         // Collect every tool name we've seen, plus any agent string
-        // (e.g. "github.copilot.editsAgent" — sometimes MCP names leak in).
+        // (e.g. "github.copilot.editsAgent" - sometimes MCP names leak in).
         Set<String> used = new HashSet<>();
         for (CopilotRequest r : requests) {
             if (r.toolsUsed() != null) used.addAll(r.toolsUsed());
@@ -231,7 +231,7 @@ public class EffectivenessScorer {
 
         if (pq.score() < 15) {
             int avg = avgPromptLen(requests);
-            tips.add("Your prompts average " + avg + " chars — add more context, expected behavior, "
+            tips.add("Your prompts average " + avg + " chars - add more context, expected behavior, "
                     + "and constraints to reduce back-and-forth.");
         }
         if (tu.score() < 15) {
@@ -246,13 +246,13 @@ public class EffectivenessScorer {
             }
             if (!missing.isEmpty()) {
                 String list = String.join(", ", missing.subList(0, Math.min(3, missing.size())));
-                tips.add("Try using " + list + " — these tools can speed up your workflow.");
+                tips.add("Try using " + list + " - these tools can speed up your workflow.");
             } else {
                 tips.add("Mix in more diverse tools (search, edit, view) to cover more workflow steps.");
             }
         }
         if (ef.score() < 15) {
-            tips.add("Many requests are returning no token data — enable verbose logging in your IDE "
+            tips.add("Many requests are returning no token data - enable verbose logging in your IDE "
                     + "for richer analysis. See docs/LOG_ACTIVATION.md.");
         }
         if (mu.score() < 15 && configuredMcps != null && !configuredMcps.isEmpty()) {
@@ -268,7 +268,7 @@ public class EffectivenessScorer {
             if (days.size() < 3) {
                 tips.add("Use Copilot more regularly to build momentum and improve your workflow.");
             } else {
-                tips.add("Try tackling larger tasks with Copilot — your active minutes are "
+                tips.add("Try tackling larger tasks with Copilot - your active minutes are "
                         + "below the ideal range for sustained sessions.");
             }
         }
