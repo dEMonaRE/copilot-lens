@@ -16,6 +16,9 @@ import io.copilotlens.parser.IntelliJParser;
 import io.copilotlens.parser.LogParser;
 import io.copilotlens.parser.VsCodeForkParser;
 import io.copilotlens.parser.VsCodeParser;
+import io.copilotlens.parser.VsCodeSessionDb;
+import io.copilotlens.parser.VsCodeSessionJson;
+import io.copilotlens.parser.VsCodeSessionJsonl;
 import io.copilotlens.reporter.CliReporter;
 import io.copilotlens.reporter.HtmlReporter;
 import io.copilotlens.reporter.JsonReporter;
@@ -30,6 +33,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -99,6 +103,7 @@ public class Main {
         IncrementalState state = new IncrementalState();
 
         List<CopilotRequest> requests = parseWithCache(state, log, parser, params);
+        requests = enrichWithChatSessions(requests);
 
         Report report = new StatsAggregator().aggregate(requests);
         CliReporter cli = new CliReporter(!params.noAnsi);
@@ -287,6 +292,7 @@ public class Main {
         Path log = resolveLog(params);
         LogParser parser = createParser(log, params);
         List<CopilotRequest> requests = parser.parse(log);
+        requests = enrichWithChatSessions(requests);
 
         Discoverer d = new Discoverer();
         List<Finding> findings = d.analyze(requests);
@@ -317,6 +323,7 @@ public class Main {
         Path log = resolveLog(params);
         LogParser parser = createParser(log, params);
         List<CopilotRequest> requests = parser.parse(log);
+        requests = enrichWithChatSessions(requests);
 
         String format = params.format != null ? params.format : "json";
         if (!format.equals("json")) {
@@ -401,6 +408,104 @@ public class Main {
             msg += "  VSCode, IntelliJ, Windsurf, and Cursor setup steps.";
             return new RuntimeException(msg);
         });
+    }
+
+    /**
+     * P0 step 9: VSCode chat-session reader integration. Walks
+     * {@code %APPDATA%\Code\User\workspaceStorage\*\state.vscdb} to find
+     * the chat session index, then parses each {@code chatSessions\<id>.{json,jsonl}}
+     * file into one {@link CopilotRequest} per turn. Appended to the input
+     * list and returned.
+     *
+     * <p>Gated by {@code chatsession.enabled=true} in config. Default OFF
+     * so existing runs are unchanged. Returns the input list unchanged
+     * when disabled or when no VSCode install is present.
+     *
+     * <p>All errors are swallowed: missing VSCode, corrupt SQLite, oversized
+     * session files, malformed JSON, or missing gson/sqlite-jdbc on classpath
+     * all result in a quiet skip. The flag is opt-in; we never break a run.
+     */
+    static List<CopilotRequest> enrichWithChatSessions(List<CopilotRequest> existing) {
+        CopilotLensConfig cfg = CopilotLensConfig.load();
+        if (!cfg.getBool("chatsession.enabled")) return existing;
+        String appdata = System.getenv("APPDATA");
+        if (appdata == null || appdata.isEmpty()) return existing;
+        Path userRoot = Paths.get(appdata, "Code", "User");
+        if (!Files.isDirectory(userRoot)) return existing;
+
+        long maxBytes;
+        try { maxBytes = Long.parseLong(cfg.get("chatsession.maxBytes")); }
+        catch (NumberFormatException e) { maxBytes = 200_000_000L; }
+
+        VsCodeSessionDb db = new VsCodeSessionDb();
+        VsCodeSessionJson jsonParser = new VsCodeSessionJson(maxBytes);
+        VsCodeSessionJsonl jsonlParser = new VsCodeSessionJsonl(maxBytes);
+
+        List<CopilotRequest> added = new ArrayList<>();
+        List<VsCodeSessionDb.WorkspaceSessions> workspaces;
+        try { workspaces = db.loadAll(userRoot); }
+        catch (NoClassDefFoundError | Exception e) {
+            // sqlite-jdbc or gson missing — silently skip
+            return existing;
+        }
+
+        int sessionsParsed = 0, sessionsSkipped = 0;
+        for (var ws : workspaces) {
+            Path chatSessionsDir = ws.stateDb().getParent().resolve("chatSessions");
+            if (!Files.isDirectory(chatSessionsDir)) continue;
+            for (var entry : ws.sessions()) {
+                if (entry.isEmpty()) continue;
+                String sessionId = entry.sessionId();
+                Path jsonFile = chatSessionsDir.resolve(sessionId + ".json");
+                Path jsonlFile = chatSessionsDir.resolve(sessionId + ".jsonl");
+                Path sessionFile = Files.exists(jsonFile) ? jsonFile
+                        : (Files.exists(jsonlFile) ? jsonlFile : null);
+                if (sessionFile == null) {
+                    sessionsSkipped++;
+                    continue;
+                }
+                List<? extends Object> turns;
+                try {
+                    if (sessionFile.toString().endsWith(".json")) {
+                        turns = jsonParser.parse(sessionFile, entry.title(), ws.workspaceHash());
+                    } else {
+                        turns = jsonlParser.parse(sessionFile, entry.title(), ws.workspaceHash());
+                    }
+                } catch (Exception e) {
+                    sessionsSkipped++;
+                    continue;
+                }
+                if (turns == null) {
+                    sessionsSkipped++;
+                    continue;
+                }
+                for (Object o : turns) {
+                    if (o instanceof VsCodeSessionJson.SessionTurn jt) {
+                        added.add(CopilotRequest.ofSession(
+                                jt.timestamp(), CopilotRequest.Ide.VSCODE,
+                                jt.sessionId(), jt.agentId(),
+                                jt.promptText(), jt.responseText(),
+                                jt.toolNames(), jt.title()));
+                    } else if (o instanceof VsCodeSessionJsonl.SessionTurn lt) {
+                        added.add(CopilotRequest.ofSession(
+                                lt.timestamp(), CopilotRequest.Ide.VSCODE,
+                                lt.sessionId(), lt.agentId(),
+                                lt.promptText(), lt.responseText(),
+                                lt.toolNames(), lt.title()));
+                    }
+                }
+                sessionsParsed++;
+            }
+        }
+        if (sessionsParsed > 0 || sessionsSkipped > 0) {
+            System.err.println("[chatsession] parsed " + sessionsParsed +
+                    " sessions, skipped " + sessionsSkipped);
+        }
+
+        List<CopilotRequest> merged = new ArrayList<>(existing.size() + added.size());
+        merged.addAll(existing);
+        merged.addAll(added);
+        return merged;
     }
 
     static LogParser createParser(Path log, Args params) {
