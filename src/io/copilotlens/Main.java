@@ -2,6 +2,7 @@ package io.copilotlens;
 
 import io.copilotlens.analyzer.Discoverer;
 import io.copilotlens.analyzer.Discoverer.Finding;
+import io.copilotlens.analyzer.EffectivenessScorer;
 import io.copilotlens.analyzer.IncrementalState;
 import io.copilotlens.analyzer.StatsAggregator;
 import io.copilotlens.analyzer.StatsAggregator.Report;
@@ -11,6 +12,7 @@ import io.copilotlens.analyzer.TrendAggregator.Period;
 import io.copilotlens.analyzer.TrendAggregator.TrendPoint;
 import io.copilotlens.config.CopilotLensConfig;
 import io.copilotlens.detector.IdeDetector;
+import io.copilotlens.detector.McpScanner;
 import io.copilotlens.parser.CopilotRequest;
 import io.copilotlens.parser.IntelliJParser;
 import io.copilotlens.parser.LogParser;
@@ -121,6 +123,13 @@ public class Main {
             new HtmlReporter().write(report, htmlOut);
             System.out.println("HTML report: " + htmlOut.toAbsolutePath());
         }
+
+        // P1.2: append the Effectiveness Score section (categories + tips).
+        List<String> configuredMcps;
+        try { configuredMcps = new McpScanner().configuredNames(); }
+        catch (NoClassDefFoundError | Exception e) { configuredMcps = List.of(); }
+        EffectivenessScorer.Score score = new EffectivenessScorer().score(requests, configuredMcps);
+        cli.printScore(score);
     }
 
     /**

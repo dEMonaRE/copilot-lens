@@ -1,5 +1,8 @@
 package io.copilotlens.reporter;
 
+import io.copilotlens.analyzer.EffectivenessScorer;
+import io.copilotlens.analyzer.EffectivenessScorer.CategoryScore;
+import io.copilotlens.analyzer.EffectivenessScorer.Score;
 import io.copilotlens.analyzer.StatsAggregator.Report;
 import io.copilotlens.analyzer.TrendAggregator.Period;
 import io.copilotlens.analyzer.TrendAggregator.TrendPoint;
@@ -403,6 +406,37 @@ public class CliReporter {
         System.out.println();
         c(GRAY, "  File: " + dir.resolve(s.date() + ".json"));
         System.out.println();
+    }
+
+    /** P1.2: render the Effectiveness Score card with categories and tips. */
+    public void printScore(Score score) {
+        printBanner();
+        c(BOLD, "Effectiveness Score");
+        System.out.println();
+        c(GRAY, repeat('-', 64));
+        System.out.println();
+        System.out.printf(Locale.ROOT, "  Total: %d / %d%n", score.total(), score.maxTotal());
+        System.out.println();
+        printCategoryRow(score.promptQuality());
+        printCategoryRow(score.toolUtilization());
+        printCategoryRow(score.efficiency());
+        printCategoryRow(score.mcpUtilization());
+        printCategoryRow(score.engagement());
+        if (!score.tips().isEmpty()) {
+            System.out.println();
+            c(BOLD, "Tips:");
+            System.out.println();
+            for (String tip : score.tips()) {
+                c(GRAY, "  - ");
+                c(DIM, tip);
+                System.out.println();
+            }
+        }
+    }
+
+    private void printCategoryRow(CategoryScore c) {
+        System.out.printf(Locale.ROOT, "  %-18s  %3d / %d   %s%n",
+                c.label(), c.score(), c.maxScore(), c.detail());
     }
 
     private void color(String color, String text) {
