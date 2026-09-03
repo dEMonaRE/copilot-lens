@@ -176,7 +176,10 @@ public class VsCodeParser implements LogParser {
                                         last.outputTokens(), last.messageCount(),
                                         last.summary(), last.workspaceHint(),
                                         last.model(), provider, latency,
-                                        last.tokenSource()));
+                                        last.tokenSource(),
+                                        last.sessionId(), last.agent(),
+                                        last.promptText(), last.responseText(),
+                                        last.toolsUsed()));
                         continue;
                     }
                 }

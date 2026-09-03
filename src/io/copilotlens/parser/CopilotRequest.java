@@ -1,6 +1,7 @@
 package io.copilotlens.parser;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Bir Copilot API çağrısının parse edilmiş hali.
@@ -14,6 +15,10 @@ import java.time.LocalDateTime;
  * {@link TokenSource} her kayıt için token sayılarının nereden geldiğini
  * belirtir: log-reported (usage satırı / JSON-RPC data), BPE-estimated
  * (yerel tiktoken sayımı) veya none (hiç token yok).
+ *
+ * P0 (VSCode chat-session reader) ek alanlar ekler:
+ * sessionId, agent, promptText, responseText, toolsUsed. Hepsi nullable —
+ * log-tabanlı parser'lar için null kalır, geriye uyumlu.
  */
 public record CopilotRequest(
         LocalDateTime timestamp,
@@ -27,7 +32,13 @@ public record CopilotRequest(
         String model,
         String provider,
         Integer latencyMs,
-        TokenSource tokenSource
+        TokenSource tokenSource,
+        // ---- P0 alanları (nullable) ----
+        String sessionId,
+        String agent,
+        String promptText,
+        String responseText,
+        List<String> toolsUsed
 ) {
     public enum Ide { VSCODE, INTELLIJ, CURSOR, WINDSURF }
 
@@ -51,6 +62,14 @@ public record CopilotRequest(
         return outputTokens > 0;
     }
 
+    /** Convenience for P0 callers: any of the rich-session fields populated? */
+    public boolean hasSessionContent() {
+        return (sessionId != null && !sessionId.isEmpty())
+                || (promptText != null && !promptText.isEmpty())
+                || (responseText != null && !responseText.isEmpty())
+                || (toolsUsed != null && !toolsUsed.isEmpty());
+    }
+
     /**
      * Backward-compatible factory: token-counted requests.
      * Default tokenSource = ESTIMATED; çağıran kod gerekirse
@@ -60,7 +79,8 @@ public record CopilotRequest(
                                      int inTok, int outTok, int msgs,
                                      String summary, String workspace) {
         return new CopilotRequest(ts, ide, endpoint, inTok, outTok, msgs,
-                summary, workspace, null, null, null, TokenSource.ESTIMATED);
+                summary, workspace, null, null, null, TokenSource.ESTIMATED,
+                null, null, null, null, null);
     }
 
     /**
@@ -70,7 +90,8 @@ public record CopilotRequest(
                                              int inTok, int outTok, int msgs,
                                              String summary, String workspace) {
         return new CopilotRequest(ts, ide, endpoint, inTok, outTok, msgs,
-                summary, workspace, null, null, null, TokenSource.REPORTED);
+                summary, workspace, null, null, null, TokenSource.REPORTED,
+                null, null, null, null, null);
     }
 
     /**
@@ -83,7 +104,8 @@ public record CopilotRequest(
                                               String model, String provider,
                                               Integer latencyMs) {
         return new CopilotRequest(ts, ide, endpoint, inTok, outTok, msgs,
-                summary, workspace, model, provider, latencyMs, TokenSource.ESTIMATED);
+                summary, workspace, model, provider, latencyMs, TokenSource.ESTIMATED,
+                null, null, null, null, null);
     }
 
     /**
@@ -97,7 +119,8 @@ public record CopilotRequest(
                                                        Integer latencyMs) {
         return new CopilotRequest(ts, ide, endpoint, inTok, outTok, msgs,
                 summary, workspace, model, provider, latencyMs,
-                TokenSource.ESTIMATED_HEURISTIC);
+                TokenSource.ESTIMATED_HEURISTIC,
+                null, null, null, null, null);
     }
 
     /**
@@ -107,6 +130,28 @@ public record CopilotRequest(
                                        String model, String provider, Integer latencyMs,
                                        String summary) {
         return new CopilotRequest(ts, ide, endpoint, 0, 0, 1,
-                summary, null, model, provider, latencyMs, TokenSource.NONE);
+                summary, null, model, provider, latencyMs, TokenSource.NONE,
+                null, null, null, null, null);
+    }
+
+    /**
+     * P0 factory: VSCode chat-session turn. Token counts are unknown
+     * (the JSON-RPC body isn't logged), so tokenSource is NONE and the
+     * rich prompt/response/tool fields carry the actual content.
+     *
+     * If a {@code tokenCounter} is supplied, BPE counts are computed
+     * from the prompt text so the rest of the report (totals, top-N)
+     * stays consistent. Pass {@code null} to leave inputTokens=0.
+     */
+    public static CopilotRequest ofSession(LocalDateTime ts, Ide ide,
+                                           String sessionId, String agent,
+                                           String promptText, String responseText,
+                                           List<String> toolsUsed,
+                                           String title) {
+        return new CopilotRequest(ts, ide, "vscode/chat/session", 0, 0,
+                toolsUsed == null ? 0 : toolsUsed.size(),
+                title == null ? promptText : title,
+                null, null, null, null, TokenSource.NONE,
+                sessionId, agent, promptText, responseText, toolsUsed);
     }
 }

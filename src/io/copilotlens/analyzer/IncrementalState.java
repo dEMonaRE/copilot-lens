@@ -158,15 +158,37 @@ public class IncrementalState {
               .append("\", \"latencyMs\": ").append(r.latencyMs() == null ? "null" : r.latencyMs().toString())
               .append(", \"tokenSource\": \"").append(r.tokenSource() == null ? "NONE" : r.tokenSource().name())
               .append("\"}");
+            // P0 fields: emit only when populated to keep cache compact for legacy turns.
+            appendOptionalJsonString(sb, ", \"sessionId\": ", r.sessionId());
+            appendOptionalJsonString(sb, ", \"agent\": ", r.agent());
+            appendOptionalJsonString(sb, ", \"promptText\": ", r.promptText());
+            appendOptionalJsonString(sb, ", \"responseText\": ", r.responseText());
+            if (r.toolsUsed() != null && !r.toolsUsed().isEmpty()) {
+                sb.append(", \"toolsUsed\": [");
+                boolean firstTool = true;
+                for (String t : r.toolsUsed()) {
+                    if (!firstTool) sb.append(", ");
+                    firstTool = false;
+                    sb.append("\"").append(escape(t)).append("\"");
+                }
+                sb.append("]");
+            }
+            sb.append("}");
         }
         sb.append("\n  ]\n}");
         return sb.toString();
     }
 
+    private static void appendOptionalJsonString(StringBuilder sb, String prefix, String value) {
+        if (value == null) return;
+        sb.append(prefix).append("\"").append(escape(value)).append("\"");
+    }
+
     @SuppressWarnings("unchecked")
     private void parseCachedRequests(String content) {
         // Simple regex-based JSON parsing (works for our own output).
-        // Formats supported: legacy (8 fields), current (11 fields), newest (12 fields).
+        // Formats supported: legacy (8 fields), current (12 fields),
+        //                     newest (12 + optional P0 fields).
         // Backward-compatible: missing optional fields default to null/0/ESTIMATED.
         java.util.regex.Pattern p = java.util.regex.Pattern.compile(
             "\\{\"timestamp\":\\s*\"([^\"]+)\",\\s*\"ide\":\\s*\"(\\w+)\"," +
@@ -178,6 +200,11 @@ public class IncrementalState {
             "(?:,\\s*\"provider\":\\s*\"([^\"]*)\")?" +
             "(?:,\\s*\"latencyMs\":\\s*(\\d+|null))?" +
             "(?:,\\s*\"tokenSource\":\\s*\"(\\w+)\")?" +
+            "(?:,\\s*\"sessionId\":\\s*\"([^\"]*)\")?" +
+            "(?:,\\s*\"agent\":\\s*\"([^\"]*)\")?" +
+            "(?:,\\s*\"promptText\":\\s*\"((?:[^\"\\\\]|\\\\.)*)\")?" +
+            "(?:,\\s*\"responseText\":\\s*\"((?:[^\"\\\\]|\\\\.)*)\")?" +
+            "(?:,\\s*\"toolsUsed\":\\s*\\[([^\\]]*)\\])?" +
             "\\}");
         java.util.regex.Matcher m = p.matcher(content);
         while (m.find()) {
@@ -207,10 +234,33 @@ public class IncrementalState {
                 } else {
                     tokenSource = (in + out) > 0 ? CopilotRequest.TokenSource.ESTIMATED : CopilotRequest.TokenSource.NONE;
                 }
+                String sessionId = m.group(13);
+                String agent = m.group(14);
+                String promptText = unescape(m.group(15));
+                String responseText = unescape(m.group(16));
+                List<String> tools = parseToolsList(m.group(17));
                 cachedRequests.add(new CopilotRequest(ts, ide, endpoint, in, out, msgs,
-                        summary, ws, model, provider, latency, tokenSource));
+                        summary, ws, model, provider, latency, tokenSource,
+                        sessionId, agent, promptText, responseText, tools));
             } catch (Exception ignored) {}
         }
+    }
+
+    /** Parse a JSON array of quoted strings into a List. Returns empty list on missing/malformed input. */
+    private static List<String> parseToolsList(String body) {
+        if (body == null || body.isBlank()) return List.of();
+        List<String> out = new ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(body);
+        while (m.find()) {
+            out.add(unescape(m.group(1)));
+        }
+        return out;
+    }
+
+    private static String unescape(String s) {
+        if (s == null) return null;
+        return s.replace("\\\\", "\\").replace("\\\"", "\"")
+                .replace("\\n", "\n").replace("\\r", "\r");
     }
 
     private void parseState(String content) {
@@ -227,7 +277,7 @@ public class IncrementalState {
         }
     }
 
-    private String escape(String s) {
+    private static String escape(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r");
