@@ -40,10 +40,19 @@ SLF4J_API_TMP="$LIB_DIR/.slf4j-api-${SLF4J_VERSION}.download"
 SLF4J_NOP_FINAL="$LIB_DIR/slf4j-nop-${SLF4J_VERSION}.jar"
 SLF4J_NOP_TMP="$LIB_DIR/.slf4j-nop-${SLF4J_VERSION}.download"
 
+# error_prone_annotations: gson 2.11.0 @InlineMe annotation referansi.
+# gson bunu compile-scope dependency olarak isaretliyor; classpath'te olmazsa
+# javac "Cannot find annotation method 'replacement()' in type 'InlineMe'" gibi
+# 6 uyari uretiyor. JAR sadece annotation, runtime kodu yok (~17 KB).
+ERROR_PRONE_ANN_VERSION="2.18.0"
+ERROR_PRONE_ANN_FINAL="$LIB_DIR/error_prone_annotations-${ERROR_PRONE_ANN_VERSION}.jar"
+ERROR_PRONE_ANN_TMP="$LIB_DIR/.error_prone_annotations-${ERROR_PRONE_ANN_VERSION}.download"
+
 MAVEN_REPO="https://repo1.maven.org/maven2/com/knuddels/jtokkit"
 SQLITE_REPO="https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc"
 GSON_REPO="https://repo1.maven.org/maven2/com/google/code/gson/gson"
 SLF4J_REPO="https://repo1.maven.org/maven2/org/slf4j"
+EPA_REPO="https://repo1.maven.org/maven2/com/google/errorprone/error_prone_annotations"
 
 echo "==> JDK kontrol"
 if [[ -n "${JAVA_HOME:-}" ]] && [[ -x "$JAVA_HOME/bin/javac" ]]; then
@@ -175,16 +184,23 @@ download_jar "$SLF4J_API_FINAL" "$SLF4J_API_TMP" \
 download_jar "$SLF4J_NOP_FINAL" "$SLF4J_NOP_TMP" \
     "${SLF4J_REPO}/slf4j-nop/${SLF4J_VERSION}/slf4j-nop-${SLF4J_VERSION}.jar" \
     1000 "slf4j-nop ${SLF4J_VERSION}" || true
+# error_prone_annotations: gson @InlineMe uyarilarini susturmak icin zorunlu.
+# Indirilemezse uyari cikar ama build devam eder (JAR zaten lib/ icindeyse skip).
+download_jar "$ERROR_PRONE_ANN_FINAL" "$ERROR_PRONE_ANN_TMP" \
+    "${EPA_REPO}/${ERROR_PRONE_ANN_VERSION}/error_prone_annotations-${ERROR_PRONE_ANN_VERSION}.jar" \
+    1000 "error_prone_annotations ${ERROR_PRONE_ANN_VERSION}" || true
 
 echo "==> Kaynak kodlar derleniyor"
 mkdir -p "$OUT_DIR"
 
-# Classpath: jtokkit her zaman; sqlite-jdbc + gson + slf4j P0 icin.
+# Classpath: jtokkit her zaman; sqlite-jdbc + gson + slf4j + error_prone_annotations
+# P0 / uyari bastirma icin. Her biri opsiyonel: dosya varsa eklenir, yoksa skip.
 CP="$JTOKKIT_FINAL"
 [[ -f "$SQLITE_JDBC_FINAL" ]] && CP="$CP:$SQLITE_JDBC_FINAL"
 [[ -f "$GSON_FINAL" ]] && CP="$CP:$GSON_FINAL"
 [[ -f "$SLF4J_API_FINAL" ]] && CP="$CP:$SLF4J_API_FINAL"
 [[ -f "$SLF4J_NOP_FINAL" ]] && CP="$CP:$SLF4J_NOP_FINAL"
+[[ -f "$ERROR_PRONE_ANN_FINAL" ]] && CP="$CP:$ERROR_PRONE_ANN_FINAL"
 
 # Use bash's globstar instead of `find` — avoids Windows' find.exe
 # shadowing the GNU one when System32 appears earlier in PATH.
