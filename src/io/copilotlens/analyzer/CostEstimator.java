@@ -31,23 +31,38 @@ import java.util.TreeMap;
  */
 public class CostEstimator {
 
-    /** USD per 1M tokens for common models. Lowercase keys; substring match. */
+    /**
+     * USD per 1M tokens for common models. Lowercase keys; substring match.
+     * Source: vendor pricing pages as of 2026-09-10. Ponytail: refresh
+     * quarterly or when adding a new vendor; override via config for
+     * negotiated rates.
+     */
     private static final Map<String, double[]> DEFAULT_PRICES;
     static {
         Map<String, double[]> m = new LinkedHashMap<>();
         // [inputPerMTok, outputPerMTok]
-        m.put("gpt-4o",           new double[] { 2.50, 10.00 });
-        m.put("gpt-4o-mini",      new double[] { 0.15,  0.60 });
-        m.put("gpt-4.1",          new double[] { 2.00,  8.00 });
-        m.put("gpt-4.1-mini",     new double[] { 0.40,  1.60 });
-        m.put("gpt-4-turbo",      new double[] {10.00, 30.00 });
-        m.put("gpt-4",            new double[] {30.00, 60.00 });
-        m.put("gpt-3.5-turbo",    new double[] { 0.50,  1.50 });
-        m.put("claude-3.5-sonnet",new double[] { 3.00, 15.00 });
-        m.put("claude-3-opus",    new double[] {15.00, 75.00 });
-        m.put("claude-3-haiku",   new double[] { 0.25,  1.25 });
-        m.put("gemini-1.5-pro",   new double[] { 3.50, 10.50 });
-        m.put("gemini-1.5-flash", new double[] { 0.075, 0.30 });
+        // Zhipu AI
+        m.put("glm-4.7-flash",     new double[] { 0.00, 0.00 }); // free tier
+        // Amazon
+        m.put("nova-micro",        new double[] { 0.035, 0.14 });
+        // Alibaba
+        m.put("qwen-3.7-flash",    new double[] { 0.03,  0.13 });
+        // OpenAI
+        m.put("gpt-5-nano",        new double[] { 0.05,  0.40 });
+        m.put("gpt-5-mini",        new double[] { 0.25,  2.00 });
+        m.put("gpt-5",             new double[] { 1.25, 10.00 });
+        // Google
+        m.put("gemini-2.5-flash-lite", new double[] { 0.10, 0.40 });
+        m.put("gemini-3.6-flash",      new double[] { 1.50, 7.50 });
+        // Meta
+        m.put("llama-4-scout",     new double[] { 0.17,  0.66 });
+        m.put("llama-4-maverick",  new double[] { 0.24,  0.97 });
+        // Anthropic
+        m.put("claude-haiku-4.5",  new double[] { 1.00,  5.00 });
+        m.put("claude-sonnet-5",   new double[] { 2.00, 10.00 });
+        m.put("claude-opus-5",     new double[] { 5.00, 25.00 });
+        // xAI
+        m.put("grok-4.5",          new double[] { 2.00,  6.00 });
         DEFAULT_PRICES = m;
     }
 
