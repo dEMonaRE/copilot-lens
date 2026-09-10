@@ -125,12 +125,14 @@ public class CliReporter {
         c(GRAY, repeat('-', 64));
         System.out.println();
         int max = daily.values().stream().max(Integer::compare).orElse(1);
-        daily.forEach((d, count) -> {
-            int barWidth = (int) (30.0 * count / max);
-            System.out.printf(Locale.ROOT, "  %s  ", d);
-            color(GREEN, repeat('#', Math.max(0, barWidth)));
-            System.out.printf(Locale.ROOT, " %d%n", count);
-        });
+        daily.forEach((d, count) ->
+            System.out.println("  " + d + "  " + bar(count, max, 30) + " " + count));
+    }
+
+    /** Build a # bar (ANSI green) scaled to value/max over {@code width} chars. */
+    private String bar(int value, int max, int width) {
+        int w = max <= 0 ? 0 : (int) ((long) width * value / max);
+        return colorStr(GREEN, repeat('#', Math.max(0, w)));
     }
 
     private void printTopRequests(List<CopilotRequest> largest) {
@@ -143,23 +145,16 @@ public class CliReporter {
         int maxTokens = Math.max(1, largest.get(0).inputTokens());
         for (int i = 0; i < largest.size(); i++) {
             CopilotRequest r = largest.get(i);
-            int barWidth = Math.max(1, (int) (35.0 * r.inputTokens() / maxTokens));
-
-            String ideBadge = ideBadge(r.ide());
-
-            System.out.printf(Locale.ROOT, "  %2d. %s%s  %,6d tok  ",
-                    i + 1,
-                    formatTime(r.timestamp()),
-                    ideBadge,
-                    r.inputTokens());
-            c(GREEN, repeat('#', barWidth));
-
+            String ideB = ideBadge(r.ide());
+            String row = String.format(Locale.ROOT, "  %2d. %s%s  %,6d tok  %s",
+                    i + 1, formatTime(r.timestamp()), ideB, r.inputTokens(),
+                    bar(r.inputTokens(), maxTokens, 35));
             // Output token rozeti: log formatında response body'si yoksa
             // "(response not logged)" rozeti göster.
             if (r.outputTokens() == 0 && r.inputTokens() > 0) {
-                c(DIM, "  (response not logged)");
+                row += colorStr(DIM, "  (response not logged)");
             }
-            System.out.println();
+            System.out.println(row);
 
             if (r.summary() != null && !r.summary().isEmpty()) {
                 c(GRAY, "      +-- ");
@@ -182,10 +177,8 @@ public class CliReporter {
         int total = r.modelDistribution().values().stream().mapToInt(Integer::intValue).sum();
         for (var e : r.modelDistribution().entrySet()) {
             int pct = (int) (100.0 * e.getValue() / total);
-            int barWidth = (int) (40.0 * pct / 100);
-            System.out.printf(Locale.ROOT, "  %-30s  ", truncate(e.getKey(), 30));
-            color(GREEN, repeat('#', Math.max(0, barWidth)));
-            System.out.printf(Locale.ROOT, " %,4d (%d%%)%n", e.getValue(), pct);
+            System.out.printf(Locale.ROOT, "  %-30s  %s %,4d (%d%%)%n",
+                    truncate(e.getKey(), 30), bar(pct, 100, 40), e.getValue(), pct);
         }
     }
 
@@ -198,10 +191,8 @@ public class CliReporter {
         int total = r.providerDistribution().values().stream().mapToInt(Integer::intValue).sum();
         for (var e : r.providerDistribution().entrySet()) {
             int pct = (int) (100.0 * e.getValue() / total);
-            int barWidth = (int) (40.0 * pct / 100);
-            System.out.printf(Locale.ROOT, "  %-30s  ", truncate(e.getKey(), 30));
-            color(GREEN, repeat('#', Math.max(0, barWidth)));
-            System.out.printf(Locale.ROOT, " %,4d (%d%%)%n", e.getValue(), pct);
+            System.out.printf(Locale.ROOT, "  %-30s  %s %,4d (%d%%)%n",
+                    truncate(e.getKey(), 30), bar(pct, 100, 40), e.getValue(), pct);
         }
     }
 
@@ -284,11 +275,8 @@ public class CliReporter {
             String key = h + ":00";
             int count = hourly.getOrDefault(key, 0);
             if (count == 0) continue;
-            int barWidth = (int) (30.0 * count / max);
-            if (ansi) System.out.print(BOLD + key + RESET + "  ");
-            else System.out.print(key + "  ");
-            color(GREEN, repeat('#', barWidth));
-            System.out.printf(Locale.ROOT, " %d%n", count);
+            String prefix = ansi ? colorStr(BOLD, key) + "  " : key + "  ";
+            System.out.println(prefix + bar(count, max, 30) + " " + count);
         }
     }
 

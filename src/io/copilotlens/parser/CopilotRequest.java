@@ -147,11 +147,11 @@ public record CopilotRequest(
                                            String sessionId, String agent,
                                            String promptText, String responseText,
                                            List<String> toolsUsed,
-                                           String title) {
+                                           String title, String workspaceHint) {
         return new CopilotRequest(ts, ide, "vscode/chat/session", 0, 0,
                 toolsUsed == null ? 0 : toolsUsed.size(),
                 title == null ? promptText : title,
-                null, null, null, null, TokenSource.NONE,
+                workspaceHint, null, null, null, TokenSource.NONE,
                 sessionId, agent, promptText, responseText, toolsUsed);
     }
 }

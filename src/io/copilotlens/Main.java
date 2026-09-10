@@ -87,6 +87,10 @@ public class Main {
                 case SNAPSHOT -> runSnapshot(params);
                 case TREND -> runTrend(params);
                 case INSTALL -> runInstall(params);
+                case SCORE -> runScore(params);
+                case MCP -> runMcp(params);
+                case SEARCH -> runSearch(params);
+                case COST -> runCost(params);
             }
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
@@ -328,6 +332,197 @@ public class Main {
         System.out.println("  - Use #selection in custom commands, don't paste whole files");
     }
 
+    /**
+     * P2.1: dedicated score command. Same parse+enrich+score path as
+     * runReport, but stops at printScore so the full report doesn't repeat.
+     */
+    static void runScore(Args params) throws Exception {
+        Path log = resolveLog(params);
+        LogParser parser = createParser(log, params);
+        List<CopilotRequest> requests = parseWithCache(
+                new IncrementalState(), log, parser, params);
+        requests = enrichWithChatSessions(requests);
+
+        List<String> configuredMcps;
+        try { configuredMcps = new McpScanner().configuredNames(); }
+        catch (NoClassDefFoundError | Exception e) { configuredMcps = List.of(); }
+        EffectivenessScorer.Score score =
+                new EffectivenessScorer().score(requests, configuredMcps);
+        new CliReporter(!params.noAnsi).printScore(score);
+    }
+
+    /**
+     * P2.3: list configured MCP servers and how often each was invoked
+     * across all chat-session turns in this parse.
+     */
+    static void runMcp(Args params) throws Exception {
+        Path log = resolveLog(params);
+        LogParser parser = createParser(log, params);
+        List<CopilotRequest> requests = parseWithCache(
+                new IncrementalState(), log, parser, params);
+        requests = enrichWithChatSessions(requests);
+
+        java.util.Map<String, Integer> invoked = new java.util.TreeMap<>();
+        for (CopilotRequest r : requests) {
+            if (r.toolsUsed() == null) continue;
+            for (String t : r.toolsUsed()) invoked.merge(t, 1, Integer::sum);
+        }
+
+        List<McpScanner.McpServer> servers = new McpScanner().scanAll();
+        System.out.println("Configured MCP servers");
+        System.out.println("-----------------------");
+        if (servers.isEmpty()) {
+            System.out.println("  (none configured)");
+            System.out.println();
+            System.out.println("Add MCP server entries to one of:");
+            System.out.println("  ~/.vscode/mcp.json");
+            System.out.println("  %APPDATA%\\Code\\User\\mcp.json");
+            System.out.println("  <project>/.vscode/mcp.json");
+            return;
+        }
+        for (McpScanner.McpServer s : servers) {
+            int count = mcpInvokeCount(s.name(), invoked);
+            String suffix = count == 0 ? "(unused)" : "invoked " + count + "x";
+            String src = s.sourceFile() != null ? s.sourceFile().getFileName().toString() : "?";
+            System.out.printf("  %-20s %-30s %s%n", s.name(), src, suffix);
+        }
+    }
+
+    /**
+     * Fuzzy match an MCP config name against a set of used tool names.
+     * Case-insensitive, strip {@code -_ } so {@code bitbucket-server}
+     * matches {@code bitbucketserver} or vice versa.
+     */
+    private static int mcpInvokeCount(String cfg, java.util.Map<String, Integer> used) {
+        String cfgKey = cfg.toLowerCase(java.util.Locale.ROOT).replaceAll("[-_\\s]", "");
+        int total = 0;
+        for (var e : used.entrySet()) {
+            String uKey = e.getKey().toLowerCase(java.util.Locale.ROOT)
+                    .replaceAll("[-_\\s]", "");
+            if (uKey.contains(cfgKey) || cfgKey.contains(uKey)) {
+                total += e.getValue();
+            }
+        }
+        return total;
+    }
+
+    /**
+     * P2.2: substring search across prompt text, response text, and summary.
+     * Cheap scan over already-collected fields; no index.
+     */
+    static void runSearch(Args params) throws Exception {
+        if (params.query == null || params.query.isBlank()) {
+            System.err.println("Usage: copilot-lens search \"<query>\" [--limit=N] [--ide=...]");
+            System.exit(1);
+        }
+
+        Path log = resolveLog(params);
+        LogParser parser = createParser(log, params);
+        List<CopilotRequest> requests = parseWithCache(
+                new IncrementalState(), log, parser, params);
+        requests = enrichWithChatSessions(requests);
+
+        List<io.copilotlens.analyzer.SearchIndex.SearchHit> hits =
+                new io.copilotlens.analyzer.SearchIndex().search(requests, params.query, params.limit);
+
+        if (hits.isEmpty()) {
+            System.out.println("No matches for \"" + params.query + "\".");
+            boolean hasSession = requests.stream().anyMatch(CopilotRequest::hasSessionContent);
+            if (!hasSession) {
+                System.out.println();
+                System.out.println("Note: only IDE logs were searched.");
+                System.out.println("Set chatsession.enabled=true (Windows only)");
+                System.out.println("to enable full-prompt searches.");
+            }
+            return;
+        }
+        System.out.printf("Found %d match(es) for \"%s\":%n%n", hits.size(), params.query);
+        for (var h : hits) {
+            System.out.printf("[%s] %s  %s%n",
+                    h.request().timestamp(),
+                    ideBadgeShort(h.request().ide()),
+                    h.field());
+            System.out.println("  ..." + highlight(h.snippet(), params.query) + "...");
+            System.out.println();
+        }
+    }
+
+    /** Short IDE badge (no padding) for inline use. */
+    private static String ideBadgeShort(CopilotRequest.Ide ide) {
+        return switch (ide) {
+            case VSCODE   -> "VSCode";
+            case INTELLIJ -> "IDEA";
+            case CURSOR   -> "Cursor";
+            case WINDSURF -> "Wndsrf";
+        };
+    }
+
+    /** Highlight the query substring with ANSI yellow bold in {@code text}. */
+    private static String highlight(String text, String query) {
+        if (text == null || query == null || query.isEmpty()) return text == null ? "" : text;
+        StringBuilder out = new StringBuilder(text.length() + 16);
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        String q = query.toLowerCase(java.util.Locale.ROOT);
+        int i = 0;
+        while (i < text.length()) {
+            int idx = lower.indexOf(q, i);
+            if (idx < 0) {
+                out.append(text, i, text.length());
+                break;
+            }
+            out.append(text, i, idx);
+            out.append("[1;33m");
+            out.append(text, idx, idx + q.length());
+            out.append("[0m");
+            i = idx + q.length();
+        }
+        return out.toString();
+    }
+
+    /**
+     * P2.5: provider-API cost estimation. Aggregates by period like
+     * {@code trend} but uses estimated cost instead of token totals.
+     */
+    static void runCost(Args params) throws Exception {
+        Path log = resolveLog(params);
+        LogParser parser = createParser(log, params);
+        List<CopilotRequest> requests = parseWithCache(
+                new IncrementalState(), log, parser, params);
+        requests = enrichWithChatSessions(requests);
+
+        io.copilotlens.analyzer.CostEstimator estimator =
+                new io.copilotlens.analyzer.CostEstimator();
+        List<io.copilotlens.analyzer.CostEstimator.Cost> costs = estimator.estimate(requests);
+
+        System.out.println("Disclaimer: GitHub Copilot bills on premium requests, not tokens.");
+        System.out.println("This is what you'd pay calling the provider APIs directly.");
+        System.out.println();
+
+        String periodStr = params.period != null ? params.period : "daily";
+        if ("weekly".equalsIgnoreCase(periodStr)) {
+            printCostTable("weekly", estimator.aggregateWeekly(costs));
+        } else if ("monthly".equalsIgnoreCase(periodStr)) {
+            printCostTable("monthly", estimator.aggregateMonthly(costs));
+        } else {
+            printCostTable("daily", estimator.aggregateDaily(costs));
+        }
+    }
+
+    private static void printCostTable(String periodName,
+            List<io.copilotlens.analyzer.CostEstimator.CostBreakdown> rows) {
+        System.out.println("Cost by " + periodName + " period:");
+        System.out.printf("  %-12s  %12s  %12s  %12s%n",
+                periodName, "in $", "out $", "total $");
+        if (rows.isEmpty()) {
+            System.out.println("  (no data)");
+            return;
+        }
+        for (var b : rows) {
+            System.out.printf(Locale.ROOT, "  %-12s  %12.4f  %12.4f  %12.4f%n",
+                    b.label(), b.inputCost(), b.outputCost(), b.totalCost());
+        }
+    }
+
     static void runExport(Args params) throws Exception {
         Path log = resolveLog(params);
         LogParser parser = createParser(log, params);
@@ -335,14 +530,31 @@ public class Main {
         requests = enrichWithChatSessions(requests);
 
         String format = params.format != null ? params.format : "json";
-        if (!format.equals("json")) {
-            System.err.println("Only 'json' format is currently supported.");
-            System.exit(1);
+        switch (format) {
+            case "json" -> {
+                Path output = Paths.get("copilot-lens-export.json");
+                new JsonReporter().write(requests, output);
+                System.out.println("Export written: " + output.toAbsolutePath());
+            }
+            case "sft" -> {
+                if (requests.stream().noneMatch(CopilotRequest::hasSessionContent)) {
+                    System.err.println("export sft needs prompt/response text.");
+                    System.err.println("Enable chatsession.enabled=true in config.properties");
+                    System.err.println("(chat-session reader is Windows-only).");
+                    System.exit(1);
+                }
+                Path output = params.outPath != null
+                        ? params.outPath
+                        : Paths.get("copilot-lens-export.jsonl");
+                int n = new io.copilotlens.analyzer.SftExporter(8_000)
+                        .write(requests, output);
+                System.out.println("Wrote " + n + " SFT examples to " + output.toAbsolutePath());
+            }
+            default -> {
+                System.err.println("Unsupported format: " + format + " (use json|sft)");
+                System.exit(1);
+            }
         }
-
-        Path output = Paths.get("copilot-lens-export.json");
-        new JsonReporter().write(requests, output);
-        System.out.println("Export written: " + output.toAbsolutePath());
     }
 
     /**
@@ -438,7 +650,15 @@ public class Main {
         CopilotLensConfig cfg = CopilotLensConfig.load();
         if (!cfg.getBool("chatsession.enabled")) return existing;
         String appdata = System.getenv("APPDATA");
-        if (appdata == null || appdata.isEmpty()) return existing;
+        if (appdata == null || appdata.isEmpty()) {
+            // Non-Windows hosts (macOS, Linux) don't set %APPDATA%.
+            // Don't silently swallow: tell the user the feature ran but
+            // found no session data, so they know to set it on Windows.
+            DebugLog.warn("chatsession.enabled=true but APPDATA is unset "
+                    + "(non-Windows host). Session data unavailable. "
+                    + "Run on Windows or set APPDATA to your VSCode User dir.");
+            return existing;
+        }
         Path userRoot = Paths.get(appdata, "Code", "User");
         if (!Files.isDirectory(userRoot)) return existing;
 
@@ -494,13 +714,15 @@ public class Main {
                                 jt.timestamp(), CopilotRequest.Ide.VSCODE,
                                 jt.sessionId(), jt.agentId(),
                                 jt.promptText(), jt.responseText(),
-                                jt.toolNames(), jt.title()));
+                                jt.toolNames(), jt.title(),
+                                ws.workspaceHash()));
                     } else if (o instanceof VsCodeSessionJsonl.SessionTurn lt) {
                         added.add(CopilotRequest.ofSession(
                                 lt.timestamp(), CopilotRequest.Ide.VSCODE,
                                 lt.sessionId(), lt.agentId(),
                                 lt.promptText(), lt.responseText(),
-                                lt.toolNames(), lt.title()));
+                                lt.toolNames(), lt.title(),
+                                ws.workspaceHash()));
                     }
                 }
                 sessionsParsed++;
@@ -546,12 +768,19 @@ public class Main {
               trend            ASCII trend chart from stored snapshots
               init             Write default ./config.properties (idempotent)
               install          Copy wrapper to ~/.local/bin and update PATH
+              score            Print the 0-100 Effectiveness Score
+              mcp              List configured MCP servers + invocation counts
+              search "<q>"     Substring search over prompt/response text
+              cost             Provider-API cost estimate (--period=...)
+              export sft       OpenAI chat-format JSONL (Windows only)
 
             Options:
               --ide=vscode|idea|cursor|windsurf|auto   IDE selection (default: auto)
               --log=<path>             Manual log file
               --period=daily|weekly|monthly   Trend grouping (default: daily)
               --days=N                 How many recent buckets to show (default: 30)
+              --limit=N                Max search hits (default: 20)
+              --out=<path>             Output file (export sft)
               --no-ansi                Disable colored terminal output
               --help, -h               Show this help
 
@@ -566,6 +795,11 @@ public class Main {
               copilot-lens trend --period=weekly --days=12
               copilot-lens trend --period=monthly
               copilot-lens export json
+              copilot-lens score
+              copilot-lens mcp
+              copilot-lens search "auth" --limit=5
+              copilot-lens cost --period=weekly
+              copilot-lens export sft --out=demo.jsonl
               copilot-lens install
               copilot-lens --log=/path/to/custom.log
 

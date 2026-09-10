@@ -9,7 +9,7 @@ import java.nio.file.Paths;
  */
 public class Args {
 
-    public enum Command { LOG, WATCH, GAIN, DISCOVER, EXPORT, REPORT, INIT, SNAPSHOT, TREND, INSTALL }
+    public enum Command { LOG, WATCH, GAIN, DISCOVER, EXPORT, REPORT, INIT, SNAPSHOT, TREND, INSTALL, SCORE, MCP, SEARCH, COST }
     public enum Ide { IDE_AUTO, IDE_VSCODE, IDE_INTELLIJ, IDE_CURSOR, IDE_WINDSURF }
 
     public Command command = Command.LOG;
@@ -21,6 +21,9 @@ public class Args {
     public String format;
     public String period = "daily";
     public int days = 30;
+    public String query;
+    public int limit = 20;
+    public java.nio.file.Path outPath;
 
     public static Args parse(String[] argv) {
         Args a = new Args();
@@ -35,6 +38,15 @@ public class Args {
                 case "install" -> a.command = Command.INSTALL;
                 case "snapshot" -> a.command = Command.SNAPSHOT;
                 case "trend" -> a.command = Command.TREND;
+                case "score" -> a.command = Command.SCORE;
+                case "mcp" -> a.command = Command.MCP;
+                case "cost" -> a.command = Command.COST;
+                case "search" -> {
+                    a.command = Command.SEARCH;
+                    if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
+                        a.query = argv[++i];
+                    }
+                }
                 case "export" -> {
                     a.command = Command.EXPORT;
                     if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
@@ -65,6 +77,14 @@ public class Args {
                         } catch (NumberFormatException ignored) {
                             a.days = 30;
                         }
+                    } else if (arg.startsWith("--limit=")) {
+                        try {
+                            a.limit = Integer.parseInt(arg.substring(8));
+                        } catch (NumberFormatException ignored) {
+                            a.limit = 20;
+                        }
+                    } else if (arg.startsWith("--out=")) {
+                        a.outPath = Paths.get(arg.substring(6));
                     }
                 }
             }

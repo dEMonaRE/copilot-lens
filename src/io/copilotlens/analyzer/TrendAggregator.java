@@ -63,7 +63,11 @@ public class TrendAggregator {
         return new ArrayList<>(points.subList(points.size() - n, points.size()));
     }
 
-    private static String bucketKey(LocalDate date, Period period) {
+    /**
+     * Bucket label for a date and period. Package-private so
+     * {@link CostEstimator} can reuse the exact same labelling.
+     */
+    static String bucketKey(LocalDate date, Period period) {
         return switch (period) {
             case DAILY   -> date.toString();
             case WEEKLY  -> isoWeekKey(date);
