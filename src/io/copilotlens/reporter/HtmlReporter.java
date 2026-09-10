@@ -1,18 +1,24 @@
 package io.copilotlens.reporter;
 
+import io.copilotlens.analyzer.EffectivenessScorer;
 import io.copilotlens.analyzer.StatsAggregator.Report;
 import io.copilotlens.analyzer.TrendAggregator;
 import io.copilotlens.analyzer.TrendAggregator.Period;
 import io.copilotlens.analyzer.TrendAggregator.TrendPoint;
+import io.copilotlens.detector.McpScanner;
 import io.copilotlens.parser.CopilotRequest;
 import io.copilotlens.snapshot.Snapshot;
 import io.copilotlens.snapshot.SnapshotStore;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Self-contained HTML rapor. Dis CSS, dark mode destekli, inline tum veri.
@@ -24,13 +30,17 @@ public class HtmlReporter {
         SnapshotStore store = new SnapshotStore();
         List<Snapshot> snapshots = store.loadAll();
         String trendSection = renderTrendSection(snapshots);
+        String modelDonut = renderModelDonut(report.modelDistribution());
+        String cumulativeByIde = renderCumulativeByIde(report.allRequests());
+        String scoreSection = renderScoreSection(report);
         String topRows = renderTopRows(report.largestRequests());
 
-        String html = buildHtml(report, topRows, trendSection);
+        String html = buildHtml(report, topRows, trendSection, modelDonut, cumulativeByIde, scoreSection);
         Files.writeString(output, html);
     }
 
-    private String buildHtml(Report report, String topRows, String trendSection) {
+    private String buildHtml(Report report, String topRows, String trendSection,
+                             String modelDonut, String cumulativeByIde, String scoreSection) {
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html>\n");
         sb.append("<html lang=\"en\">\n");
@@ -74,6 +84,16 @@ public class HtmlReporter {
         sb.append("    .badge-windsurf { background: #7c4dff33; color: #7c4dff; }\n");
         sb.append("    code { background: var(--card); padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 13px; }\n");
         sb.append("    .empty { color: var(--muted); font-style: italic; }\n");
+    sb.append("    .chart-wrap { background: var(--card); padding: 16px; border-radius: 8px; margin: 12px 0; }\n");
+    sb.append("    .chart-wrap svg { width: 100%; height: auto; max-height: 240px; display: block; }\n");
+    sb.append("    .chart-row { display: grid; grid-template-columns: 1fr 200px; gap: 16px; align-items: center; }\n");
+    sb.append("    .score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 12px 0; }\n");
+    sb.append("    .score-card { background: var(--card); padding: 14px; border-radius: 8px; border-left: 3px solid var(--accent); }\n");
+    sb.append("    .score-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; }\n");
+    sb.append("    .score-card .value { font-size: 22px; font-weight: 700; color: var(--accent); margin-top: 4px; }\n");
+    sb.append("    .score-card .detail { color: var(--muted); font-size: 12px; margin-top: 4px; }\n");
+    sb.append("    .tips { background: var(--card); padding: 16px; border-radius: 8px; margin: 12px 0; }\n");
+    sb.append("    .tips li { margin: 6px 0; }\n");
         sb.append("  </style>\n");
         sb.append("</head>\n");
         sb.append("<body>\n");
@@ -94,6 +114,21 @@ public class HtmlReporter {
         sb.append("    <div class=\"card\"><div class=\"card-label\">Max Output</div><div class=\"card-value warn\">")
           .append(String.format(Locale.ROOT, "%,d", report.maxOutputTokens())).append("</div></div>\n");
         sb.append("  </div>\n");
+
+        if (scoreSection != null) {
+            sb.append(scoreSection);
+        }
+
+        if (cumulativeByIde != null) {
+            sb.append("  <h2>Cumulative Tokens by IDE</h2>\n");
+            sb.append(cumulativeByIde);
+        }
+
+        if (modelDonut != null) {
+            sb.append("  <h2>Model Distribution</h2>\n");
+            sb.append("  <div class='chart-row'><div class='empty'>See donut for share; bar chart below for daily counts.</div></div>\n");
+            sb.append(modelDonut);
+        }
 
         if (trendSection != null) {
             sb.append(trendSection);
@@ -187,7 +222,19 @@ public class HtmlReporter {
         int max = Math.max(1, points.stream().mapToInt(TrendPoint::totalTokens).max().orElse(1));
 
         StringBuilder sb = new StringBuilder();
-        sb.append("  <h2>Daily Trend (").append(points.size()).append(" days)</h2>\n");
+        sb.append("  <h2 id='trend'>Daily Trend (").append(points.size()).append(" days)</h2>\n");
+
+        // SVG bar chart above the table — visual first, numbers on demand.
+        List<String> labels = new ArrayList<>();
+        List<Integer> vals = new ArrayList<>();
+        for (TrendPoint p : points) {
+            labels.add(p.label());
+            vals.add(p.totalTokens());
+        }
+        sb.append("  <div class='chart-wrap'>")
+          .append(SvgChart.barChart(labels, vals, 720, 200))
+          .append("</div>\n");
+
         sb.append("  <table>\n");
         sb.append("    <tr><th>Date</th><th>Requests</th><th>Tokens</th><th>Bar</th></tr>\n");
         for (TrendPoint p : points) {
@@ -207,5 +254,114 @@ public class HtmlReporter {
         if (s == null) return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace("\"", "&quot;");
+    }
+
+    /**
+     * Render the donut chart for the model distribution. Returns {@code null}
+     * when there's nothing to plot so the caller can skip the section.
+     */
+    private String renderModelDonut(Map<String, Integer> distribution) {
+        if (distribution == null || distribution.isEmpty()) return null;
+        return "  <div class='chart-wrap'>"
+                + SvgChart.donut(distribution, 160)
+                + "</div>\n";
+    }
+
+    /**
+     * Render the cumulative-tokens-by-IDE line chart. Buckets by date,
+     * one series per IDE. Last 14 days max so the chart stays readable.
+     */
+    private String renderCumulativeByIde(List<CopilotRequest> requests) {
+        if (requests == null || requests.isEmpty()) return null;
+        TreeMap<LocalDate, int[]> daily = new TreeMap<>();
+        for (CopilotRequest r : requests) {
+            LocalDate d = r.timestamp().toLocalDate();
+            int ideIdx = ideIndex(r.ide());
+            int[] agg = daily.computeIfAbsent(d, k -> new int[4]);
+            if (ideIdx >= 0) agg[ideIdx] += r.totalTokens();
+        }
+        // tail 14 days
+        List<LocalDate> days = new ArrayList<>(daily.keySet());
+        int from = Math.max(0, days.size() - 14);
+        days = days.subList(from, days.size());
+
+        Map<String, List<Integer>> series = new java.util.LinkedHashMap<>();
+        List<Integer> vscSeries = new ArrayList<>();
+        List<Integer> ideaSeries = new ArrayList<>();
+        List<Integer> cursorSeries = new ArrayList<>();
+        List<Integer> windSeries = new ArrayList<>();
+        for (LocalDate d : days) {
+            int[] a = daily.getOrDefault(d, new int[4]);
+            vscSeries.add(a[0]);
+            ideaSeries.add(a[1]);
+            cursorSeries.add(a[2]);
+            windSeries.add(a[3]);
+        }
+        series.put("VSCode", vscSeries);
+        series.put("IntelliJ", ideaSeries);
+        series.put("Cursor", cursorSeries);
+        series.put("Windsurf", windSeries);
+
+        List<String> xLabels = new ArrayList<>();
+        for (LocalDate d : days) xLabels.add(d.toString());
+
+        return "  <div class='chart-wrap'>"
+                + SvgChart.lineChart(series, 720, 200, xLabels)
+                + "</div>\n";
+    }
+
+    /** 0=VSCode, 1=IntelliJ, 2=Cursor, 3=Windsurf. */
+    private static int ideIndex(CopilotRequest.Ide ide) {
+        return switch (ide) {
+            case VSCODE   -> 0;
+            case INTELLIJ -> 1;
+            case CURSOR   -> 2;
+            case WINDSURF -> 3;
+        };
+    }
+
+    /**
+     * Render the Effectiveness Score section. Mirrors CLI {@code printScore}
+     * so HTML and CLI report the same numbers.
+     */
+    private String renderScoreSection(Report report) {
+        try {
+            List<String> configuredMcps;
+            try { configuredMcps = new McpScanner().configuredNames(); }
+            catch (Exception e) { configuredMcps = List.of(); }
+            EffectivenessScorer scorer = new EffectivenessScorer();
+            EffectivenessScorer.Score score =
+                    scorer.score(report.allRequests(), configuredMcps);
+
+            StringBuilder s = new StringBuilder();
+            s.append("  <h2 id='score'>Effectiveness Score</h2>\n");
+            s.append("  <p class='meta'>Total: <b>").append(score.total())
+             .append(" / ").append(score.maxTotal()).append("</b></p>\n");
+            s.append("  <div class='score-grid'>\n");
+            appendScoreCard(s, score.promptQuality());
+            appendScoreCard(s, score.toolUtilization());
+            appendScoreCard(s, score.efficiency());
+            appendScoreCard(s, score.mcpUtilization());
+            appendScoreCard(s, score.engagement());
+            s.append("  </div>\n");
+            if (!score.tips().isEmpty()) {
+                s.append("  <div class='tips'><b>Tips</b><ul>\n");
+                for (String tip : score.tips()) {
+                    s.append("    <li>").append(escape(tip)).append("</li>\n");
+                }
+                s.append("  </ul></div>\n");
+            }
+            return s.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void appendScoreCard(StringBuilder s, EffectivenessScorer.CategoryScore c) {
+        s.append("    <div class='score-card'>")
+         .append("<div class='label'>").append(escape(c.label())).append("</div>")
+         .append("<div class='value'>").append(c.score()).append(" / ").append(c.maxScore()).append("</div>")
+         .append("<div class='detail'>").append(escape(c.detail())).append("</div>")
+         .append("</div>\n");
     }
 }

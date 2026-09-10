@@ -165,10 +165,8 @@ public class EffectivenessScorer {
         }
         int usedCount = 0;
         for (String cfg : configuredMcps) {
-            String cfgLower = cfg.toLowerCase().replaceAll("[-_\\s]", "");
             for (String u : used) {
-                String uLower = u.toLowerCase().replaceAll("[-_\\s]", "");
-                if (uLower.contains(cfgLower) || cfgLower.contains(uLower)) {
+                if (McpScanner.fuzzyMatches(cfg, u)) {
                     usedCount++;
                     break;
                 }

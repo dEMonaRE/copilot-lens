@@ -158,3 +158,18 @@ The wrapper handles `cygpath` conversion automatically. If broken, verify `cygpa
 
 **Windows file-association prompt when downloading jar**
 Fixed in `build.sh` — the jar is downloaded as `.download` then atomically renamed to `.jar` so Windows never sees a fresh `.jar` file.
+
+## Platform Notes
+
+`copilot-lens` is **Windows-first** because the VSCode chat-session reader (`chatsession.enabled=true`) reads from `%APPDATA%\Code\User\workspaceStorage\*\state.vscdb` — a Windows-only path. Other commands run anywhere JDK 17 is installed.
+
+| Command | Windows | macOS / Linux | Notes |
+|---------|---------|---------------|-------|
+| `gain` (default), `watch`, `discover`, `report`, `trend`, `snapshot`, `init`, `install` | yes | yes | IDE log parsing only |
+| `score` | yes | yes | Uses MCP config; chat-session fields degrade gracefully |
+| `cost` | yes | yes | Token-based estimate; degrades on log-only sources |
+| `mcp` | yes | partial | MCP config detection works everywhere; invocation counts require chat-session data |
+| `search` | yes | degraded | Substring scan over chat-session text only — empty results on macOS |
+| `export sft` | yes | no | Requires `promptText`/`responseText` from chat sessions; errors out cleanly on macOS |
+
+To use the full chat-session surface on macOS, set `APPDATA` in your shell to your VSCode user-data directory (e.g. `~/Library/Application Support/Code`) before invoking. The reader currently expects the Windows layout; this is a known gap.

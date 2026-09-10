@@ -52,7 +52,10 @@ Daily trend of requests over time. Useful for weekly/monthly review.
 Finds optimization opportunities:
 - Largest single request (and what to do about it)
 - Most-frequent-context-file (close it in IDE)
-- Low signal/noise requests (big prompt, small response)
+- Low signal/noise (latency proxy: heavy input, short round-trip)
+- Bloated summary ratio (chat-session data)
+- Workspace repetition (chat-session data)
+- Prompt repetition fingerprint (chat-session data)
 - Your peak usage hours
 
 ### `copilot-lens snapshot`
@@ -106,7 +109,54 @@ cat copilot-lens-export.json | jq '.requests[] | select(.inputTokens > 1000)'
 
 ### `copilot-lens report`
 
-Writes HTML report to `copilot-lens-report.html`. Open in any browser. Dark mode auto-detected.
+Writes HTML report to `copilot-lens-report.html`. Open in any browser. Dark mode auto-detected. Includes:
+- KPI grid (requests, tokens, max)
+- Effectiveness Score card (5 categories + tips)
+- Cumulative Tokens by IDE (line chart)
+- Model Distribution (donut)
+- Daily Trend (bar chart + table)
+- Top 10 Most Expensive Requests
+
+### `copilot-lens score`
+
+Prints the 0–100 Effectiveness Score with all 5 categories and improvement tips. Useful as a daily check without the full HTML report. Mirrors the score card in the HTML report.
+
+### `copilot-lens mcp` (Windows only for invocation counts)
+
+Lists configured MCP servers and how many times each was invoked across your chat sessions. Helps identify MCP servers you configured but never use.
+
+### `copilot-lens search "<query>"` (Windows only for full coverage)
+
+Substring search across prompt text, response text, and session summaries. Returns up to `--limit` matches (default 20) with ±60-character snippets. Highlighted in the terminal.
+
+```bash
+copilot-lens search "authentication" --limit=5
+```
+
+### `copilot-lens export sft` (Windows only)
+
+Exports chat sessions as OpenAI chat-format JSONL, ready for fine-tuning. One document per turn. Truncates to 8k tokens per document.
+
+```bash
+copilot-lens export sft --out=demo.jsonl
+head -1 demo.jsonl | python3 -m json.tool
+```
+
+### `copilot-lens cost`
+
+Estimates what your Copilot usage would cost at raw provider-API rates. Disclaimer: GitHub Copilot itself bills on premium requests, not tokens — these numbers are an upper bound.
+
+```bash
+copilot-lens cost --period=daily   # default
+copilot-lens cost --period=weekly
+copilot-lens cost --period=monthly
+```
+
+Override pricing via config:
+```properties
+cost.input.gpt-4o=2.50
+cost.output.gpt-4o=10.00
+```
 
 ### `copilot-lens init`
 

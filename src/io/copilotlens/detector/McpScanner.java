@@ -76,6 +76,21 @@ public class McpScanner {
         return out;
     }
 
+    /**
+     * Case-insensitive fuzzy match: strip {@code -_ } whitespace from both
+     * sides and check substring containment either direction. Lets
+     * {@code bitbucket-server} match {@code bitbucketserver} (or vice
+     * versa) so MCP config names line up with tool names the IDE logs.
+     */
+    public static boolean fuzzyMatches(String configName, String used) {
+        if (configName == null || used == null) return false;
+        String cfg = configName.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[-_\\s]", "");
+        String u = used.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[-_\\s]", "");
+        return u.contains(cfg) || cfg.contains(u);
+    }
+
     /** Internal: build the list of config-file candidates. */
     private List<Path> configCandidates() {
         List<Path> out = new ArrayList<>();
